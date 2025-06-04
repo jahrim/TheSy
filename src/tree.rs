@@ -1,7 +1,8 @@
 use std::fmt::{Display, Formatter};
 use std::rc::Rc;
 
-use egg::{EGraph, Id, SymbolLang};
+use crate::adapter::EGraph;
+use egg::{Id, SymbolLang};
 use itertools::Itertools;
 use symbolic_expressions::Sexp;
 
@@ -50,7 +51,7 @@ impl Tree {
     //     };
     // }
 
-    pub fn add_to_graph(&self, graph: &mut EGraph<SymbolLang, ()>) -> Id {
+    pub fn add_to_graph<G: EGraph>(&self, graph: &mut G) -> Id {
         let mut children = Vec::new();
         for t in &self.subtrees {
             children.push(t.add_to_graph(graph));

@@ -14,6 +14,7 @@ extern crate lazy_static;
 use std::borrow::Borrow;
 use std::fs::File;
 use std::io::Write;
+use std::marker::PhantomData;
 use std::path::PathBuf;
 use std::process::exit;
 use std::time::SystemTime;
@@ -25,6 +26,7 @@ use structopt::StructOpt;
 
 use egg::*;
 
+use crate::adapter::{EGraph, EasterEgg, Egg, NoOp, Vegg};
 use crate::eggstentions::pretty_string::PrettyString;
 use crate::thesy::{example_creator, thesy_parser};
 use crate::thesy::case_split::{CaseSplit, Split};
@@ -33,6 +35,7 @@ use crate::thesy::thesy_parser::parser::Definitions;
 use crate::tools::tools::choose;
 use std::rc::Rc;
 
+mod adapter;
 mod eggstentions;
 mod tools;
 mod thesy;
@@ -57,9 +60,11 @@ struct CliOpt {
     proof_mode: bool,
     #[structopt(name = "check equivalence", short = "c", long = "check-equiv")]
     check_equiv: bool,
+    #[structopt(name = "check equivalence", short = "c", long = "check-equiv", default_value = "vegg")]
+    egraph_type: String,
 }
 
-impl From<&CliOpt> for TheSyConfig {
+impl<G: EGraph> From<&CliOpt> for TheSyConfig<G> {
     fn from(opts: &CliOpt) -> Self {
         TheSyConfig::new(
             thesy_parser::parser::parse_file(opts.path.to_str().unwrap().to_string()).unwrap(),
@@ -72,18 +77,19 @@ impl From<&CliOpt> for TheSyConfig {
 }
 
 #[derive(Clone)]
-struct TheSyConfig {
+struct TheSyConfig<G: EGraph> {
     definitions: Definitions,
     ph_count: usize,
-    dependencies: Vec<TheSyConfig>,
+    dependencies: Vec<TheSyConfig<G>>,
     dep_results: Vec<Vec<Rewrite<SymbolLang, ()>>>,
     output: PathBuf,
     prerun: bool,
     proof_mode: bool,
+    egraph_type: PhantomData<G>,
 }
 
-impl TheSyConfig {
-    pub fn new(definitions: Definitions, ph_count: usize, dependencies: Vec<TheSyConfig>, output: PathBuf, proof_mode: bool) -> TheSyConfig {
+impl<G: EGraph> TheSyConfig<G> {
+    pub fn new(definitions: Definitions, ph_count: usize, dependencies: Vec<TheSyConfig<G>>, output: PathBuf, proof_mode: bool) -> TheSyConfig<G> {
         let func_len = definitions.functions.len();
         TheSyConfig {
             definitions,
@@ -93,6 +99,7 @@ impl TheSyConfig {
             output,
             prerun: false,
             proof_mode,
+            egraph_type: PhantomData::default()
         }
         // prerun: func_len > 2}
     }
@@ -105,13 +112,13 @@ impl TheSyConfig {
         }
     }
 
-    pub fn from_path(path: String) -> TheSyConfig {
+    pub fn from_path(path: String) -> TheSyConfig<G> {
         let definitions = thesy_parser::parser::parse_file(path.clone());
         TheSyConfig::new(definitions.unwrap(), 2, vec![], PathBuf::from(path).with_extension("res"), true)
     }
 
     /// Run thesy using current configuration returning (thesy instance, previous + new rewrites)
-    pub fn run(&mut self, max_depth: Option<usize>) -> (TheSy, Vec<Rewrite<SymbolLang, ()>>) {
+    pub fn run(&mut self, max_depth: Option<usize>) -> (TheSy<G>, Vec<Rewrite<SymbolLang, ()>>) {
         self.collect_dependencies();
         let mut rules = self.definitions.rws.clone();
         rules.extend(self.dep_results.iter().flatten().cloned());
@@ -136,7 +143,7 @@ impl TheSyConfig {
                 thesy.run(&mut rules, Some(case_split), max_depth.unwrap_or(2));
             }
         }
-        let mut thesy: TheSy = TheSy::from(&*self);
+        let mut thesy: TheSy<G> = TheSy::from(&*self);
         // TODO: take a ref
         let case_split = TheSy::create_case_splitter(std::mem::take(&mut self.definitions.case_splitters));
         let results = thesy.run(&mut rules, Some(case_split), max_depth.unwrap_or(2));
@@ -154,7 +161,7 @@ impl TheSyConfig {
     }
 }
 
-impl From<&Definitions> for TheSy {
+impl<G: EGraph> From<&Definitions> for TheSy<G> {
     fn from(defs: &Definitions) -> Self {
         let mut dict = defs.functions.clone();
         for c in defs.datatypes.iter().flat_map(|d| &d.constructors) {
@@ -169,7 +176,7 @@ impl From<&Definitions> for TheSy {
             Some(defs.conjectures.clone())
         };
 
-        TheSy::new_with_ph(defs.datatypes.clone(),
+        TheSy::<G>::new_with_ph(defs.datatypes.clone(),
                            examples,
                            dict,
                            2,
@@ -177,8 +184,8 @@ impl From<&Definitions> for TheSy {
     }
 }
 
-impl From<&TheSyConfig> for TheSy {
-    fn from(conf: &TheSyConfig) -> Self {
+impl<G: EGraph> From<&TheSyConfig<G>> for TheSy<G> {
+    fn from(conf: &TheSyConfig<G>) -> Self {
         let mut dict = conf.definitions.functions.clone();
         for c in conf.definitions.datatypes.iter().flat_map(|d| &d.constructors) {
             dict.push(c.clone());
@@ -196,7 +203,7 @@ impl From<&TheSyConfig> for TheSy {
             warn!("Running exploration without proof mode, but goals were given");
         }
 
-        TheSy::new_with_ph(conf.definitions.datatypes.clone(),
+        TheSy::<G>::new_with_ph(conf.definitions.datatypes.clone(),
                            examples,
                            dict,
                            conf.ph_count,
@@ -205,10 +212,19 @@ impl From<&TheSyConfig> for TheSy {
 }
 
 fn main() {
-    use simplelog::*;
-
     let args = CliOpt::from_args();
+    match args.egraph_type.as_str() {
+        "noop" => run_thesy::<NoOp>(&args),
+        "egg" => run_thesy::<Egg>(&args),
+        "vegg" => run_thesy::<Vegg>(&args),
+        "easteregg" => run_thesy::<EasterEgg>(&args),
+        _ => panic!("Invalid egraph type")
+    }
 
+}
+
+fn run_thesy<G: EGraph>(args: &CliOpt) {
+    use simplelog::*;
     let log_path = args.path.with_extension("log");
     CombinedLogger::init(
         vec![
@@ -222,13 +238,13 @@ fn main() {
     }
 
     let start = SystemTime::now();
-    let mut config = TheSyConfig::from(&args);
+    let mut config = TheSyConfig::<G>::from(args);
     let thesy = TheSy::from(&config);
     let mut rws = thesy.system_rws.clone();
     rws.extend_from_slice(&config.definitions.rws);
     if args.check_equiv {
         for (vars, precond, ex1, ex2) in &config.definitions.conjectures {
-            if TheSy::check_equality(&rws, precond, ex1, ex2) {
+            if TheSy::<G>::check_equality(&rws, precond, ex1, ex2) {
                 println!("proved: {}{} = {}", precond.as_ref().map(|x| format!("{} => ", x.pretty(500))).unwrap_or("".to_string()), ex1.pretty(500), ex2.pretty(500))
             }
         }
@@ -249,4 +265,4 @@ fn export_json(thesy: &TheSy, path: &PathBuf) {
 }
 
 #[cfg(not(feature = "stats"))]
-fn export_json(thesy: &TheSy, path: &PathBuf) {}
+fn export_json<G: EGraph>(thesy: &TheSy<G>, path: &PathBuf) {}

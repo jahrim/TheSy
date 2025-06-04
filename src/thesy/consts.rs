@@ -1,4 +1,5 @@
 use egg::{Rewrite, SymbolLang, Pattern, Var};
+use crate::adapter::EGraph;
 use crate::eggstentions::searchers::multisearcher::{MultiEqSearcher, FilteringSearcher, aggregate_conditions, ToDyn};
 use crate::eggstentions::appliers::{DiffApplier, UnionApplier};
 use std::str::FromStr;
@@ -80,7 +81,7 @@ pub(crate) fn ite_rws() -> Vec<Rewrite<SymbolLang, ()>> {
     ]
 }
 
-pub fn system_case_splits() -> CaseSplit {
+pub fn system_case_splits<G: EGraph>() -> CaseSplit<G> {
     let ite_searcher = {
         let searcher: Pattern<SymbolLang> = Pattern::from_str("(ite ?z ?x ?y)").unwrap();
         let true_cond = FilteringSearcher::create_non_pattern_filterer(Pattern::from_str("true").unwrap().into_rc_dyn(), Var::from_str("?z").unwrap());
@@ -96,7 +97,7 @@ pub fn system_case_splits() -> CaseSplit {
 
     let x_var = Var::from_str("?x").unwrap();
     let y_var = Var::from_str("?y").unwrap();
-    let or_implies_applier: SplitApplier = Box::new(move |graph, sms| {
+    let or_implies_applier: SplitApplier<G> = Box::new(move |graph, sms| {
         let true_root = graph.add_expr(&"true".parse().unwrap());
         sms.iter().flat_map(|sm| sm.substs.iter().map(|subs|
             Split::new(true_root, vec![*subs.get(x_var).unwrap(), *subs.get(y_var).unwrap()])

@@ -1,12 +1,13 @@
 use std::cmp::max;
 use std::str::FromStr;
 
-use egg::{EGraph, ENodeOrVar, Id, Language, Pattern, RecExpr, Rewrite, Runner, Symbol, SymbolLang, Var};
+use egg::{ENodeOrVar, Id, Language, Pattern, RecExpr, Rewrite, Symbol, SymbolLang, Var};
 use itertools::Itertools;
 use log::{debug, info};
 use permutohedron::control::Control;
 use permutohedron::heap_recursive;
 
+use crate::adapter::{EGraph, RunnerConfig, Runner};
 use crate::eggstentions::appliers::DiffApplier;
 use crate::eggstentions::expression_ops::{IntoTree, RecExpSlice, Tree};
 use crate::eggstentions::searchers::multisearcher::{EitherSearcher, MultiDiffSearcher, MultiEqSearcher};
@@ -31,7 +32,7 @@ impl Prover {
 
     pub fn new(datatype: DataType) -> Prover {
         let wfo_rules = Self::wfo_datatype(&datatype);
-        let ind_var = TheSy::get_ind_var(&datatype);
+        let ind_var = TheSy::<()>::get_ind_var(&datatype);
         Prover { datatype, wfo_rules, ind_var, split_depth: Prover::CASE_SPLIT_DEPTH, split_itern: Prover::CASE_ITERN }
     }
 
@@ -88,8 +89,8 @@ impl Prover {
         ex.as_ref().iter().find(|s| s.op.to_string() == self.ind_var.name).is_none()
     }
 
-    pub fn create_graph(precond: Option<&RecExpr<SymbolLang>>, ex1: &&RecExpr<SymbolLang>, ex2: &&RecExpr<SymbolLang>) -> EGraph<SymbolLang, ()> {
-        let mut orig_egraph: EGraph<SymbolLang, ()> = EGraph::default();
+    pub fn create_graph<G: EGraph>(precond: Option<&RecExpr<SymbolLang>>, ex1: &&RecExpr<SymbolLang>, ex2: &&RecExpr<SymbolLang>) -> G {
+        let mut orig_egraph: G = G::default();
         let _ = orig_egraph.add_expr(&ex1);
         let _ = orig_egraph.add_expr(&ex2);
         if precond.is_some() {
@@ -102,9 +103,9 @@ impl Prover {
         orig_egraph
     }
 
-    fn create_proof_graph(&self, precond: Option<&RecExpr<SymbolLang>>, ex1: &&RecExpr<SymbolLang>, ex2: &&RecExpr<SymbolLang>) -> (EGraph<SymbolLang, ()>, Id) {
-        let orig_egraph = Self::create_graph(precond, ex1, ex2);
-        let ind_id = orig_egraph.lookup(SymbolLang::new(&self.ind_var.name, vec![])).unwrap();
+    fn create_proof_graph<G: EGraph>(&self, precond: Option<&RecExpr<SymbolLang>>, ex1: &&RecExpr<SymbolLang>, ex2: &&RecExpr<SymbolLang>) -> (G, Id) {
+        let orig_egraph = Self::create_graph::<G>(precond, ex1, ex2);
+        let ind_id = orig_egraph.lookup(&mut SymbolLang::new(&self.ind_var.name, vec![])).unwrap();
         (orig_egraph, ind_id)
     }
 
@@ -118,7 +119,7 @@ impl Prover {
 
     fn collect_ph1s(&self, ex: &RecExpr<SymbolLang>) -> Vec<usize> {
         ex.as_ref().iter().enumerate()
-            .filter(|s| s.1.op.as_str() == TheSy::get_ph(&self.datatype.as_exp(), 1).name)
+            .filter(|s| s.1.op.as_str() == TheSy::<()>::get_ph(&self.datatype.as_exp(), 1).name)
             .map(|s| s.0).collect_vec()
     }
 
@@ -136,27 +137,29 @@ impl Prover {
         new_rules
     }
 
-    pub fn prove_base(&self, case_splitter: &mut Option<&mut CaseSplit>, rules: &[Rewrite<SymbolLang, ()>], ex1: &RecExpr<SymbolLang>, ex2: &RecExpr<SymbolLang>) -> bool {
+    pub fn prove_base<G: EGraph>(&self, case_splitter: &mut Option<&mut CaseSplit<G>>, rules: &[Rewrite<SymbolLang, ()>], ex1: &RecExpr<SymbolLang>, ex2: &RecExpr<SymbolLang>) -> bool {
         self.prove_base_split_d(case_splitter, rules, None, ex1, ex2, Self::CASE_SPLIT_DEPTH)
     }
 
-    pub fn prove_base_split_d(&self, case_splitter: &mut Option<&mut CaseSplit>, rules: &[Rewrite<SymbolLang, ()>], precond: Option<&RecExpr<SymbolLang>>, ex1: &RecExpr<SymbolLang>, ex2: &RecExpr<SymbolLang>, split_d: usize) -> bool {
+    pub fn prove_base_split_d<G: EGraph>(&self, case_splitter: &mut Option<&mut CaseSplit<G>>, rules: &[Rewrite<SymbolLang, ()>], precond: Option<&RecExpr<SymbolLang>>, ex1: &RecExpr<SymbolLang>, ex2: &RecExpr<SymbolLang>, split_d: usize) -> bool {
         if self.not_containing_ind_var(ex1) && self.not_containing_ind_var(ex2) {
             return false;
         }
         // create graph containing both expressions
-        let (orig_egraph, ind_id) = self.create_proof_graph(precond, &ex1, &ex2);
+        let (orig_egraph, ind_id) = self.create_proof_graph::<G>(precond, &ex1, &ex2);
         self.datatype.constructors.iter().filter(|c| c.params.is_empty()).all(|c| {
             let mut egraph = orig_egraph.clone();
             let contr_id = egraph.add_expr(&c.as_exp());
             egraph.union(contr_id, ind_id);
-            let mut runner: Runner<SymbolLang, ()> = Runner::new(()).with_egraph(egraph).with_iter_limit(Self::RUN_DEPTH).run(&rules[..]);
-            case_splitter.iter_mut().for_each(|c| c.case_split(&mut runner.egraph, split_d, &rules, Self::CASE_ITERN));
-            !runner.egraph.equivs(&ex1, &ex2).is_empty()
+            let config = RunnerConfig { iter_limit: Some(Self::RUN_DEPTH), ..Default::default() };
+            let runner = egraph.runner(&config).run(&rules[..]);
+            let mut egraph = runner.egraph();
+            case_splitter.iter_mut().for_each(|c| c.case_split(&mut egraph, split_d, &rules, Self::CASE_ITERN));
+            !egraph.equivs(&ex1, &ex2).is_empty()
         })
     }
 
-    pub fn generalize_prove(&self, case_splitter: &mut Option<&mut CaseSplit>, rules: &[Rewrite<SymbolLang, ()>], orig_ex1: &RecExpr<SymbolLang>, orig_ex2: &RecExpr<SymbolLang>)
+    pub fn generalize_prove<G: EGraph>(&self, case_splitter: &mut Option<&mut CaseSplit<G>>, rules: &[Rewrite<SymbolLang, ()>], orig_ex1: &RecExpr<SymbolLang>, orig_ex2: &RecExpr<SymbolLang>)
                             -> Option<Vec<(Option<Pattern<SymbolLang>>, Pattern<SymbolLang>, Pattern<SymbolLang>, Rewrite<SymbolLang, ()>)>> {
         // TODO: generalize non induction vars
         let mut ex1 = orig_ex1.into_tree().to_clean_exp();
@@ -179,13 +182,13 @@ impl Prover {
             let updated_ex2 = Self::replace_at_indexes(
                 &ex2,
                 ex2_ph1_indices.iter().enumerate().map(|(ph_id, index)|
-                    (*index, TheSy::get_ph(&self.datatype.as_exp(), (ph_id % ph_count) + 1).name)).collect_vec(),
+                    (*index, TheSy::<G>::get_ph(&self.datatype.as_exp(), (ph_id % ph_count) + 1).name)).collect_vec(),
             );
             let control = heap_recursive(&mut ex1_ph1_indices, |permutation| {
                 let updated_ex1 = Self::replace_at_indexes(
                     &ex1,
                     permutation.iter().enumerate().map(|(ph_id, index)|
-                        (*index, TheSy::get_ph(&self.datatype.as_exp(), (ph_id % ph_count) + 1).name)).collect_vec(),
+                        (*index, TheSy::<G>::get_ph(&self.datatype.as_exp(), (ph_id % ph_count) + 1).name)).collect_vec(),
                 );
                 let res = self.prove_all(case_splitter, rules, &updated_ex1, &updated_ex2);
                 if res.is_some() {
@@ -203,7 +206,7 @@ impl Prover {
     }
 
     /// Returns Some if found rules otherwise None. Receives expressions without vars.
-    pub fn prove_ind(&self, case_splitter: &mut Option<&mut CaseSplit>, rules: &[Rewrite<SymbolLang, ()>], ex1: &RecExpr<SymbolLang>, ex2: &RecExpr<SymbolLang>)
+    pub fn prove_ind<G: EGraph>(&self, case_splitter: &mut Option<&mut CaseSplit<G>>, rules: &[Rewrite<SymbolLang, ()>], ex1: &RecExpr<SymbolLang>, ex2: &RecExpr<SymbolLang>)
                      -> Option<Vec<(Option<Pattern<SymbolLang>>, Pattern<SymbolLang>, Pattern<SymbolLang>, Rewrite<SymbolLang, ()>)>> {
         self.prove_ind_split_d(case_splitter, rules, None, ex1, ex2, Self::CASE_SPLIT_DEPTH)
     }
@@ -213,7 +216,7 @@ impl Prover {
    /// representing well founded order on the induction variable.
    /// Need to replace the induction variable with an expression representing a constructor and
    /// well founded order on the params of the constructor.
-    pub fn prove_ind_split_d(&self, case_splitter: &mut Option<&mut CaseSplit>, rules: &[Rewrite<SymbolLang, ()>], precond: Option<&RecExpr<SymbolLang>>, ex1: &RecExpr<SymbolLang>, ex2: &RecExpr<SymbolLang>, split_d: usize)
+    pub fn prove_ind_split_d<G: EGraph>(&self, case_splitter: &mut Option<&mut CaseSplit<G>>, rules: &[Rewrite<SymbolLang, ()>], precond: Option<&RecExpr<SymbolLang>>, ex1: &RecExpr<SymbolLang>, ex2: &RecExpr<SymbolLang>, split_d: usize)
                              -> Option<Vec<(Option<Pattern<SymbolLang>>, Pattern<SymbolLang>, Pattern<SymbolLang>, Rewrite<SymbolLang, ()>)>> {
         if self.not_containing_ind_var(ex1) && self.not_containing_ind_var(ex2) {
             return None;
@@ -224,7 +227,7 @@ impl Prover {
         rule_set.extend(rules.iter().cloned());
         rule_set.extend(wfo_rws.iter().cloned());
         // create graph containing both expressions
-        let (orig_egraph, ind_id) = self.create_proof_graph(precond, &ex1, &ex2);
+        let (orig_egraph, ind_id) = self.create_proof_graph::<G>(precond, &ex1, &ex2);
         let mut res = true;
         for c in self.datatype.constructors.iter().filter(|c| !c.params.is_empty()) {
             let mut egraph = orig_egraph.clone();
@@ -233,9 +236,11 @@ impl Prover {
                 .intersperse(" ".parse().unwrap()).collect::<String>()).as_str()).unwrap();
             let contr_id = egraph.add_expr(&contr_exp);
             egraph.union(contr_id, ind_id);
-            let mut runner: Runner<SymbolLang, ()> = Runner::new(()).with_egraph(egraph).with_iter_limit(Self::RUN_DEPTH).run(&rule_set[..]);
-            case_splitter.iter_mut().for_each(|c| c.case_split(&mut runner.egraph, split_d, &rule_set, Self::CASE_ITERN));
-            res = res && !runner.egraph.equivs(&ex1, &ex2).is_empty()
+            let config = RunnerConfig { iter_limit: Some(Self::RUN_DEPTH), ..Default::default() };
+            let runner = egraph.runner(&config).run(&rule_set[..]);
+            let mut egraph = runner.egraph();
+            case_splitter.iter_mut().for_each(|c| c.case_split(&mut egraph, split_d, &rule_set, Self::CASE_ITERN));
+            res = res && !egraph.equivs(&ex1, &ex2).is_empty()
         }
         if res {
             Some(Self::rw_from_exp(precond, ex1, ex2, &self.ind_var))
@@ -245,12 +250,12 @@ impl Prover {
         }
     }
 
-    pub fn prove_all(&self, case_splitter: &mut Option<&mut CaseSplit>, rules: &[Rewrite<SymbolLang, ()>], ex1: &RecExpr<SymbolLang>, ex2: &RecExpr<SymbolLang>)
+    pub fn prove_all<G: EGraph>(&self, case_splitter: &mut Option<&mut CaseSplit<G>>, rules: &[Rewrite<SymbolLang, ()>], ex1: &RecExpr<SymbolLang>, ex2: &RecExpr<SymbolLang>)
                      -> Option<Vec<(Option<Pattern<SymbolLang>>, Pattern<SymbolLang>, Pattern<SymbolLang>, Rewrite<SymbolLang, ()>)>> {
         self.prove_all_split_d(case_splitter, rules, None, ex1, ex2, Self::CASE_SPLIT_DEPTH)
     }
 
-    pub fn prove_all_split_d(&self, case_splitter: &mut Option<&mut CaseSplit>, rules: &[Rewrite<SymbolLang, ()>], precond: Option<&RecExpr<SymbolLang>>, ex1: &RecExpr<SymbolLang>, ex2: &RecExpr<SymbolLang>, split_d: usize)
+    pub fn prove_all_split_d<G: EGraph>(&self, case_splitter: &mut Option<&mut CaseSplit<G>>, rules: &[Rewrite<SymbolLang, ()>], precond: Option<&RecExpr<SymbolLang>>, ex1: &RecExpr<SymbolLang>, ex2: &RecExpr<SymbolLang>, split_d: usize)
                              -> Option<Vec<(Option<Pattern<SymbolLang>>, Pattern<SymbolLang>, Pattern<SymbolLang>, Rewrite<SymbolLang, ()>)>> {
         if self.prove_base_split_d(case_splitter, rules, precond, ex1, ex2, split_d) {
             self.prove_ind_split_d(case_splitter, rules, precond, ex1, ex2, split_d)
@@ -337,7 +342,7 @@ impl Prover {
     fn ident_mapper(i: &String, induction_ph: &String, sub_ind: &String) -> String {
         if i == induction_ph {
             sub_ind.clone()
-        } else if i.starts_with(TheSy::PH_START) {
+        } else if i.starts_with(TheSy::<()>::PH_START) {
             format!("?{}", i)
         } else {
             i.clone()
@@ -351,10 +356,10 @@ impl Prover {
     }
 }
 
-#[cfg(test)]
 mod tests {
-    use egg::{EGraph, Pattern, Runner, Searcher, SymbolLang};
+    use ::egg::{Pattern, SymbolLang};
 
+    use crate::adapter::{EGraph, Runner, Egg};
     use crate::lang::{DataType, Function};
     use crate::thesy::prover::Prover;
     use crate::TheSyConfig;
@@ -367,34 +372,45 @@ mod tests {
         ])
     }
 
-    #[test]
-    fn wfo_trans_ok() {
-        let mut egraph = EGraph::default();
+    fn wfo_trans_ok<G: EGraph>() {
+        let mut egraph = G::default();
         egraph.add_expr("(ltwf x y)".parse().as_ref().unwrap());
         egraph.add_expr("(ltwf y z)".parse().as_ref().unwrap());
-        egraph = Runner::default().with_egraph(egraph).run(&vec![Prover::wfo_trans()][..]).egraph;
+        let egraph = egraph.runner(&Default::default()).run(&vec![Prover::wfo_trans()][..]).egraph();
         let pat: Pattern<SymbolLang> = "(ltwf x z)".parse().unwrap();
-        assert!(pat.search(&egraph).iter().all(|s| !s.substs.is_empty()));
-        assert!(!pat.search(&egraph).is_empty());
+        assert!(egraph.search(&pat).iter().all(|s| !s.substs.is_empty()));
+        assert!(!egraph.search(&pat).is_empty());
     }
 
-    #[test]
-    fn wfo_nat_ok() {
-        let mut egraph = EGraph::default();
+    fn wfo_nat_ok<G: EGraph>() {
+        let mut egraph = G::default();
         egraph.add_expr("(S y)".parse().as_ref().unwrap());
-        egraph = Runner::default().with_egraph(egraph).run(&Prover::wfo_datatype(&create_nat_type())[..]).egraph;
+        let egraph = egraph.runner(&Default::default()).run(&Prover::wfo_datatype(&create_nat_type())[..]).egraph();
         let pat: Pattern<SymbolLang> = "(ltwf y (S y))".parse().unwrap();
-        assert!(pat.search(&egraph).iter().all(|s| !s.substs.is_empty()));
-        assert!(!pat.search(&egraph).is_empty());
+        assert!(egraph.search(&pat).iter().all(|s| !s.substs.is_empty()));
+        assert!(!egraph.search(&pat).is_empty());
     }
 
-    #[test]
-    fn cant_prove_wrong() {
-        let config = TheSyConfig::from_path("theories/list.th".parse().unwrap());
-        let thesy = TheSy::from(&config);
+    fn cant_prove_wrong<G: EGraph>() {
+        let config = TheSyConfig::<G>::from_path("theories/list.th".parse().unwrap());
+        let thesy = TheSy::<G>::from(&config);
         let p = thesy.datatypes.iter().next().unwrap().1;
-        let res = p.prove_ind(&mut None, &config.definitions.rws, &"(append ts_ph_Lst_0 ts_ph_Lst_1)".parse().unwrap(), &"(append ts_ph_Lst_0 (append ts_ph_Lst_1 ts_ph_Lst_0))".parse().unwrap());
+        let res = p.prove_ind::<G>(&mut None, &config.definitions.rws, &"(append ts_ph_Lst_0 ts_ph_Lst_1)".parse().unwrap(), &"(append ts_ph_Lst_0 (append ts_ph_Lst_1 ts_ph_Lst_0))".parse().unwrap());
         assert!(res.is_none());
         //(append ?ts_ph_Lst_0 ?ts_ph_Lst_1) => (append ?ts_ph_Lst_0 (append ?ts_ph_Lst_0 ?ts_ph_Lst_0))
     }
+
+    macro_rules! test_impl {
+        ($module: ident, $implementation: tt) => {
+            #[cfg(test)]
+            mod $module {
+                use super::*;
+                type Impl = $implementation;
+                #[test] fn wfo_trans_ok() { super::wfo_trans_ok::<Impl>() }
+                #[test] fn wfo_nat_ok() { super::wfo_nat_ok::<Impl>() }
+                #[test] fn cant_prove_wrong() { super::cant_prove_wrong::<Impl>() }
+            }
+        };
+    }
+    test_impl!(egg, Egg);
 }
