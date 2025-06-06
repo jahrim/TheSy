@@ -8,12 +8,14 @@ use std::time::{Duration, SystemTime};
 use itertools::Itertools;
 use log::{info, warn};
 
-use egg::*;
+use egg::{Var, RecExpr, SymbolLang, Id, Pattern, Symbol, StopReason, Subst};
 
-use crate::adapter::{EGraph, RunnerConfig, Runner, Extractor};
+use crate::adapter::{EGraph, RunnerConfig, Extractor};
 use crate::eggstentions::costs::{MinRep, RepOrder};
 use crate::eggstentions::expression_ops::{IntoTree, Tree};
-use crate::eggstentions::searchers::multisearcher::{MultiDiffSearcher};
+use crate::eggstentions::searchers::multisearcher::*;
+use crate::eggstentions::appliers::*;
+use crate::eggstentions::rewrites::{rewrite, Rewrite};
 use crate::eggstentions::pretty_string::PrettyString;
 use crate::lang::*;
 use crate::thesy::prover::Prover;
@@ -35,7 +37,7 @@ pub struct TheSy<G: EGraph> {
     /// egraph which is expanded as part of the exploration
     pub egraph: G,
     /// searchers used to create the next depth of terms
-    searchers: HashMap<String, (MultiDiffSearcher<Pattern<SymbolLang>>, Vec<(Var, RecExpr<SymbolLang>)>)>,
+    searchers: HashMap<String, (multidiff::MultiDiffSearcher, Vec<(Var, RecExpr<SymbolLang>)>)>,
     /// map maintaining the connection between eclasses created by sygue
     /// and their associated eclasses with `ind_ph` replaced by symbolic examples.
     example_ids: HashMap<DataType, HashMap<Id, Vec<Id>>>,
@@ -44,7 +46,7 @@ pub struct TheSy<G: EGraph> {
     /// Equality rewrite
     /// Or and And rewrites
     /// TODO: add support for partial application
-    pub system_rws: Vec<Rewrite<SymbolLang, ()>>,
+    pub system_rws: Vec<Rewrite>,
     /// Limits to use in equiv reduc
     node_limit: usize,
     /// Limits to use in equiv reduc
@@ -58,14 +60,15 @@ pub struct TheSy<G: EGraph> {
     // assumptions: BiHashMap<Vec<Id>, ColorId>,
     /// the hooks are used after every step of TheSy which could expand the rules set
     /// currently used to support parallel running
-    after_inference_hooks: Vec<Box<dyn FnMut(&mut Self, &mut Vec<Rewrite<SymbolLang, ()>>) -> Result<(), String>>>,
-    //after_inference_hooks: Vec<Box<dyn FnMut(&mut Self, &Vec<(Option<Pattern<SymbolLang>>, Pattern<SymbolLang>, Pattern<SymbolLang>, Rewrite<SymbolLang, ()>)>) -> Result<(), String>>>,
+    after_inference_hooks: Vec<Box<dyn FnMut(&mut Self, &mut [Rewrite]) -> Result<(), String>>>,
+    //after_inference_hooks: Vec<Box<dyn FnMut(&mut Self, &Vec<(Option<Pattern<SymbolLang>>, Pattern<SymbolLang>, Pattern<SymbolLang>, Rewrite)>) -> Result<(), String>>>,
     /// the hooks are used before every step of TheSy which could expand the rules set
     /// currently used to support parallel running
-    before_inference_hooks: Vec<Box<dyn FnMut(&mut Self, &mut Vec<Rewrite<SymbolLang, ()>>) -> Result<(), String>>>,
+    before_inference_hooks: Vec<Box<dyn FnMut(&mut Self, &mut [Rewrite]) -> Result<(), String>>>,
     /// hooks passed to [runner]
     /// for more info check: [EGG] documentation
-    equiv_reduc_hooks: Vec<Box<dyn FnMut(&mut G::Runner, &mut Vec<Rewrite<SymbolLang, ()>>) -> Result<(), String>>>,
+    //  CHANGE: remove unused hooks
+    //  equiv_reduc_hooks: Vec<Box<dyn FnMut(&mut G::Runner, &mut Vec<Rewrite>) -> Result<(), String>>>,
     /// Vars created for examples, used to reduce case split depth
     examples: HashMap<DataType, Examples>,
 }
@@ -81,7 +84,7 @@ impl<G: EGraph> TheSy<G> {
         Self::replace_ops(exp, &HashMap::from_iter(iter::once((orig, replacment))))
     }
 
-    fn create_sygue_serchers<'a>(dict: &[Function], datatypes: impl Iterator<Item=&'a DataType>) -> HashMap<String, (MultiDiffSearcher<Pattern<SymbolLang>>, Vec<(Var, RecExpr<SymbolLang>)>)> {
+    fn create_sygue_serchers<'a>(dict: &[Function], datatypes: impl Iterator<Item=&'a DataType>) -> HashMap<String, (multidiff::MultiDiffSearcher, Vec<(Var, RecExpr<SymbolLang>)>)> {
         let mut res = HashMap::new();
         let datas = datatypes.cloned().collect_vec();
         Self::known_functions(&datas, dict).for_each(|fun| {
@@ -91,11 +94,9 @@ impl<G: EGraph> TheSy<G> {
                 }).collect_vec();
                 let patterns = params.iter()
                     .flat_map(|(v, typ)| {
-                        vec![
-                            Pattern::from_str(&*format!("(typed {} {})", v.to_string(), typ.pretty(500))).unwrap(),
-                        ]
-                    }).collect::<Vec<Pattern<SymbolLang>>>();
-                res.insert(fun.name.clone(), (MultiDiffSearcher::new(patterns), params));
+                        vec![format!("(typed {} {})", v.to_string(), typ.pretty(500)).as_searcher()]
+                    }).collect::<Vec<Searcher>>();
+                res.insert(fun.name.clone(), (multidiff::MultiDiffSearcher::new(patterns), params));
             }
         });
         res
@@ -112,7 +113,7 @@ impl<G: EGraph> TheSy<G> {
         let (mut egraph, mut example_ids) = Self::create_graph_example_ids(&datatypes, &examples, &dict, ph_count);
 
         let apply_rws = Self::create_apply_rws(&dict, &datatypes, ph_count);
-        let system_rws: Vec<Rewrite<SymbolLang, ()>> = apply_rws.into_iter()
+        let system_rws: Vec<Rewrite> = apply_rws.into_iter()
             .chain(consts::ite_rws().into_iter())
             .chain(consts::equality_rws().into_iter())
             .chain(consts::bool_rws().into_iter())
@@ -166,7 +167,7 @@ impl<G: EGraph> TheSy<G> {
             // assumptions: Default::default(),
             before_inference_hooks: Default::default(),
             after_inference_hooks: Default::default(),
-            equiv_reduc_hooks: Default::default(),
+            // CHANGE equiv_reduc_hooks: Default::default(),
             examples,
         }
     }
@@ -217,7 +218,7 @@ impl<G: EGraph> TheSy<G> {
     /// Appears at the start of every placeholder var
     pub(crate) const PH_START: &'static str = "ts_ph";
 
-    fn create_apply_rws(dict: &Vec<Function>, datatypes: &Vec<DataType>, ph_count: usize) -> Vec<Rewrite<SymbolLang, ()>> {
+    fn create_apply_rws(dict: &Vec<Function>, datatypes: &Vec<DataType>, ph_count: usize) -> Vec<Rewrite> {
         let apply_rws = dict.iter()
             .chain(Self::collect_phs(Self::known_functions(datatypes, dict), ph_count).iter())
             .filter(|fun| !fun.params.is_empty())
@@ -267,7 +268,7 @@ impl<G: EGraph> TheSy<G> {
         Self::get_ph(&d.as_exp(), 0)
     }
 
-    pub fn create_case_splitter(case_splitters: Vec<(Rc<dyn Searcher<SymbolLang, ()>>, Var, Vec<Pattern<SymbolLang>>)>) -> CaseSplit<G> {
+    pub fn create_case_splitter(case_splitters: Vec<(Searcher, Var, Vec<Pattern<SymbolLang>>)>) -> CaseSplit<G> {
         let mut res = CaseSplit::from_applier_patterns(case_splitters);
         res.extend(consts::system_case_splits());
         res
@@ -326,7 +327,7 @@ impl<G: EGraph> TheSy<G> {
 
         let op_matches = self.searchers.iter()
             .map(|(op, (searcher, params))| {
-                (op, params, self.egraph.search(searcher).iter_mut().flat_map(|mut sm| std::mem::take(&mut sm.substs)).collect_vec())
+                (op, params, searcher.search(&self.egraph).iter_mut().flat_map(|sm| std::mem::take(&mut sm.substs)).collect_vec())
             }).collect_vec();
         for (op, params, subs) in op_matches {
             let typ = {
@@ -356,18 +357,17 @@ impl<G: EGraph> TheSy<G> {
         self.stats.update_term_creation(key, self.egraph.total_number_of_nodes());
     }
 
-    pub fn equiv_reduc(&mut self, rules: &mut Vec<Rewrite<SymbolLang, ()>>) -> StopReason {
+    pub fn equiv_reduc(&mut self, rules: &mut [Rewrite]) -> StopReason {
         self.equiv_reduc_depth(rules, self.iter_limit)
     }
 
-    fn equiv_reduc_depth(&mut self, rules: &mut Vec<Rewrite<SymbolLang, ()>>, depth: usize) -> StopReason {
+    fn equiv_reduc_depth(&mut self, rules: &mut [Rewrite], depth: usize) -> StopReason {
         let config = RunnerConfig {
             timeout: Some(Duration::from_secs(60 * 10)),
             node_limit: Some(self.node_limit),
             iter_limit: Some(depth),
         };
-        let egraph = std::mem::take(&mut self.egraph);
-        let mut runner = egraph.runner(&config);
+        let reason = self.egraph.run(&config, rules).unwrap();
         // TODO: Support colors
         // if !cfg!(feature = "split_clone") {
         //     runner = runner.with_hook(|runner| {
@@ -382,10 +382,6 @@ impl<G: EGraph> TheSy<G> {
         //         Ok(())
         //     })
         // }
-        runner = runner.run(&*rules);
-        let reason = runner.stop_reason().unwrap();
-        self.egraph = runner.egraph();
-        self.egraph.rebuild();
 
         // CHANGE disable runtime statistics:
         // self.stats.update_rewrite_iters(std::mem::take(&mut runner.iterations));
@@ -439,19 +435,19 @@ impl<G: EGraph> TheSy<G> {
         res.into_iter().rev().collect_vec()
     }
 
-    pub fn check_equality(rules: &[Rewrite<SymbolLang, ()>], precond: &Option<RecExpr<SymbolLang>>, ex1: &RecExpr<SymbolLang>, ex2: &RecExpr<SymbolLang>) -> bool {
+    pub fn check_equality(rules: &[Rewrite], precond: &Option<RecExpr<SymbolLang>>, ex1: &RecExpr<SymbolLang>, ex2: &RecExpr<SymbolLang>) -> bool {
         let mut egraph = Prover::create_graph::<G>(precond.as_ref(), &ex1, &ex2);
         let config = RunnerConfig {
             timeout: Some(Duration::from_secs(60)),
             node_limit: Some(10000),
             iter_limit: Some(8),
         };
-        let mut runner = egraph.runner(&config).run(rules);
-        !runner.egraph().equivs(ex1, ex2).is_empty()
+        egraph.run(&config, rules);
+        !egraph.equivs(ex1, ex2).is_empty()
     }
 
-    fn check_goals(&mut self, case_splitter: &mut Option<&mut CaseSplit<G>>, rules: &mut Vec<Rewrite<SymbolLang, ()>>)
-                   -> Option<Vec<(Option<Pattern<SymbolLang>>, Pattern<SymbolLang>, Pattern<SymbolLang>, Rewrite<SymbolLang, ()>)>> {
+    fn check_goals(&mut self, case_splitter: &mut Option<&mut CaseSplit<G>>, rules: &mut [Rewrite])
+                   -> Option<Vec<(Option<Pattern<SymbolLang>>, Pattern<SymbolLang>, Pattern<SymbolLang>, Rewrite)>> {
         if self.goals.is_none() {
             return None;
         }
@@ -485,7 +481,7 @@ impl<G: EGraph> TheSy<G> {
         res
     }
 
-    pub fn run(&mut self, rules: &mut Vec<Rewrite<SymbolLang, ()>>, mut case_spliter: Option<CaseSplit<G>>, max_depth: usize) -> Vec<(Option<Pattern<SymbolLang>>, Pattern<SymbolLang>, Pattern<SymbolLang>, Rewrite<SymbolLang, ()>)> {
+    pub fn run(&mut self, rules: &mut Vec<Rewrite>, mut case_spliter: Option<CaseSplit<G>>, max_depth: usize) -> Vec<(Option<Pattern<SymbolLang>>, Pattern<SymbolLang>, Pattern<SymbolLang>, Rewrite)> {
         // TODO: dont allow rules like (take ?x ?y) => (take ?x (append ?y ?y))
         info!("Running TheSy on datatypes: {} dict: {}", self.datatypes.keys().map(|x| &x.name).join(" "), self.dict.iter().map(|x| &x.name).join(" "));
         self.stats.init_run();
@@ -567,10 +563,10 @@ impl<G: EGraph> TheSy<G> {
         found_rules
     }
 
-    fn prove_case_split_rules(&mut self, case_splitter: &mut CaseSplit<G>, rules: &mut Vec<Rewrite<SymbolLang, ()>>, found_rules: &mut Vec<(Option<Pattern<SymbolLang>>, Pattern<SymbolLang>, Pattern<SymbolLang>, Rewrite<SymbolLang, ()>)>, new_rules_index: usize) -> bool {
+    fn prove_case_split_rules(&mut self, case_splitter: &mut CaseSplit<G>, rules: &mut Vec<Rewrite>, found_rules: &mut Vec<(Option<Pattern<SymbolLang>>, Pattern<SymbolLang>, Pattern<SymbolLang>, Rewrite)>, new_rules_index: usize) -> bool {
         let measure_splits = if cfg!(feature = "stats") {
             let n = case_split::split_patterns.iter().map(|p|
-                self.egraph.search(p)
+                p.search(&self.egraph)
                     .iter().map(|m| m.substs.len()).sum::<usize>()
             ).sum();
             self.stats.init_measure(|| n)
@@ -637,7 +633,7 @@ impl<G: EGraph> TheSy<G> {
     }
 
     /// Attempt to prove all lemmas with retry. Return true if finished all goals.
-    fn prove_goals(&mut self, case_splitter: &mut Option<&mut CaseSplit<G>>, rules: &mut Vec<Rewrite<SymbolLang, ()>>, found_rules: &mut Vec<(Option<Pattern<SymbolLang>>, Pattern<SymbolLang>, Pattern<SymbolLang>, Rewrite<SymbolLang, ()>)>, new_rules_index: usize) -> bool {
+    fn prove_goals(&mut self, case_splitter: &mut Option<&mut CaseSplit<G>>, rules: &mut Vec<Rewrite>, found_rules: &mut Vec<(Option<Pattern<SymbolLang>>, Pattern<SymbolLang>, Pattern<SymbolLang>, Rewrite)>, new_rules_index: usize) -> bool {
         loop {
             let lemma = self.check_goals(case_splitter, rules);
             if lemma.is_none() {
@@ -669,10 +665,13 @@ mod test {
 
     use itertools::Itertools;
 
-    use ::egg::{Pattern, RecExpr, Rewrite, Runner, Searcher, SymbolLang, Symbol, SearchMatches, Var};
+    use crate::egg::{Pattern, RecExpr, SymbolLang, Symbol, Var};
 
     use crate::adapter::{EGraph, Egg};
-    use crate::eggstentions::appliers::DiffApplier;
+    use crate::eggstentions::appliers::*;
+    use crate::eggstentions::searchers::multisearcher::{AsSearcher, HasSearch, Searcher};
+    use crate::eggstentions::searchers::*;
+    use crate::eggstentions::rewrites::{Rewrite, rewrite};
     use crate::lang::{DataType, Function};
     use crate::thesy::thesy::TheSy;
     use crate::TheSyConfig;
@@ -682,7 +681,6 @@ mod test {
     use crate::tools::tools::Grouped;
     use crate::eggstentions::reconstruct::{reconstruct, reconstruct_all};
     use crate::tests::init_logging;
-    use crate::eggstentions::searchers::multisearcher::ToDyn;
     use crate::thesy::thesy_parser::parser::{parse, Definitions};
 
     fn create_nat_type() -> DataType {
@@ -719,11 +717,11 @@ mod test {
         )
     }
 
-    fn create_pl_rewrites() -> Vec<Rewrite<SymbolLang, ()>> {
+    fn create_pl_rewrites() -> Vec<Rewrite> {
         vec![rewrite!("pl base"; "(pl Z ?x)" => "?x"), rewrite!("pl ind"; "(pl (S ?y) ?x)" => "(S (pl ?y ?x))")]
     }
 
-    fn create_list_rewrites() -> Vec<Rewrite<SymbolLang, ()>> {
+    fn create_list_rewrites() -> Vec<Rewrite> {
         vec![
             rewrite!("app base"; "(app Nil ?xs)" => "?xs"),
             rewrite!("app ind"; "(app (Cons ?y ?ys) ?xs)" => "(Cons ?y (app ?ys ?xs))"),
@@ -827,16 +825,15 @@ mod test {
             Examples::new(&nat_type, 0),
             vec![],
         );
-
-        let anchor_patt: Pattern<SymbolLang> = Pattern::from_str("(typed ?x ?y)").unwrap();
-        let results0 = syg.egraph.search(&anchor_patt);
+        let anchor_patt: Searcher = "(typed ?x ?y)".as_searcher();
+        let results0 = anchor_patt.search(&syg.egraph);
         // Zero, S (functions are also in graph), ph1, ph0, (true false)
         assert_eq!(6usize, results0.iter().map(|x| x.substs.len()).sum::<usize>());
         syg.increase_depth();
         // Zero, S, S Zero, ph1, S ph1, ph0, S ph0, (true false)
-        assert_eq!(9usize, syg.egraph.search(&anchor_patt).iter().map(|x| x.substs.len()).sum::<usize>());
+        assert_eq!(9usize, anchor_patt.search(&syg.egraph).iter().map(|x| x.substs.len()).sum::<usize>());
         syg.increase_depth();
-        assert_eq!(12usize, syg.egraph.search(&anchor_patt).iter().map(|x| x.substs.len()).sum::<usize>());
+        assert_eq!(12usize, anchor_patt.search(&syg.egraph).iter().map(|x| x.substs.len()).sum::<usize>());
 
         let new_nat = DataType::new("nat".to_string(), vec![
             Function::new("Z".to_string(), vec![], "nat".parse().unwrap()),
@@ -851,16 +848,16 @@ mod test {
             None,
         );
 
-        let results0 = syg.egraph.search(&anchor_patt);
+        let results0 = anchor_patt.search(&syg.egraph);
         // Zero, x, ph1, ph0, ph2, (true false)
         assert_eq!(7usize, results0.iter().map(|x| x.substs.len()).sum::<usize>());
         syg.increase_depth();
-        let results1 = syg.egraph.search(&anchor_patt);
+        let results1 = anchor_patt.search(&syg.egraph);
         // 7 + 16
         assert_eq!(23usize, results1.iter().map(|x| x.substs.len()).sum::<usize>());
         syg.increase_depth();
         // 7 + 16 + 20*20 - 16
-        let results2 = syg.egraph.search(&anchor_patt);
+        let results2 = anchor_patt.search(&syg.egraph);
         assert_eq!(407usize, results2.iter().map(|x| x.substs.len()).sum::<usize>());
     }
 
@@ -937,8 +934,8 @@ mod test {
         let phs = TheSy::<G>::collect_phs(dict.iter().chain(list_type.constructors.iter()), 3).into_iter().filter(|x| !x.params.is_empty()).collect_vec();
         let pat1 = Pattern::from_str(&*format!("(filter {} (filter {} {}))", phs[0].name, phs[1].name, TheSy::<G>::get_ind_var(&list_type).name)).unwrap();
         let pat2 = Pattern::from_str(&*format!("(filter {} (filter {} {}))", phs[1].name, phs[0].name, TheSy::<G>::get_ind_var(&list_type).name)).unwrap();
-        assert!(!thesy.egraph.search(&pat1).is_empty());
-        assert!(!thesy.egraph.search(&pat2).is_empty());
+        assert!(!pat1.search(&thesy.egraph).is_empty());
+        assert!(!pat2.search(&thesy.egraph).is_empty());
     }
 
     fn create_filter_thesy<G: EGraph>() -> (DataType, Vec<Function>, TheSy<G>) {
@@ -964,7 +961,7 @@ mod test {
         let y_var: Var = "?y".parse().unwrap();
         let correct_pattern = Pattern::from_str(&*format!("(filter ?x (filter ?y {}))", TheSy::<G>::get_ind_var(&filter_defs.datatypes[0]).name)).unwrap();
         let filter_p_filter_q_exists = |egraph: &G, min_count: usize| -> bool {
-            egraph.search(&correct_pattern).iter().any(|sm| {
+            correct_pattern.search(egraph).iter().any(|sm| {
                 sm.substs.iter().filter(|s| s.get(x_var) != s.get(y_var))
                     .count() > (min_count - 1)
             })
@@ -1000,7 +997,7 @@ mod test {
     fn take_drop_equiv_red<G: EGraph>() {
         // init_logging();
 
-        let mut conf = TheSyConfig::<G>::from_path("frontend/benchmarks/cvc4_translated/isaplanner/goal1.smt2.th".parse().unwrap());
+        let mut conf = TheSyConfig::from_path("frontend/benchmarks/cvc4_translated/isaplanner/goal1.smt2.th".parse().unwrap());
         let mut thesy = TheSy::<G>::from(&conf);
         let mut case_split = TheSy::<G>::create_case_splitter(conf.definitions.case_splitters);
         let mut rules = std::mem::take(&mut conf.definitions.rws);
@@ -1035,7 +1032,7 @@ mod test {
     // }
 
     fn filtering_searcher_playground<G: EGraph>() {
-        let mut conf = TheSyConfig::<G>::from_path("frontend/benchmarks/cvc4_translated/clam/goal1.smt2.th".parse().unwrap());
+        let mut conf = TheSyConfig::from_path("frontend/benchmarks/cvc4_translated/clam/goal1.smt2.th".parse().unwrap());
         let mut thesy = TheSy::<G>::from(&conf);
         let rules = std::mem::take(&mut conf.definitions.rws);
         println!("{}", rules.last().unwrap().name());
@@ -1068,7 +1065,7 @@ mod test {
     }
 
     fn test_all_are_single_typed<G: EGraph>() {
-        let mut config = TheSyConfig::<G>::from_path("theories/list.th".parse().unwrap());
+        let mut config = TheSyConfig::from_path("theories/list.th".parse().unwrap());
         let mut thesy = TheSy::<G>::from(&config);
         thesy.increase_depth();
         thesy.increase_depth();
@@ -1079,14 +1076,14 @@ mod test {
     }
 
     fn test_not_creating_append_nat<G: EGraph>() {
-        let config = TheSyConfig::<G>::from_path("theories/list.th".parse().unwrap());
+        let config = TheSyConfig::from_path("theories/list.th".parse().unwrap());
         let mut thesy = TheSy::<G>::from(&config);
         thesy.increase_depth();
         thesy.increase_depth();
     }
 
     fn test_list_run_append_assoc<G: EGraph>() {
-        let mut config = TheSyConfig::<G>::from_path("theories/list.th".parse().unwrap());
+        let mut config = TheSyConfig::from_path("theories/list.th".parse().unwrap());
         let mut thesy = TheSy::<G>::from(&config);
         thesy.run(&mut config.definitions.rws, None, 2);
         assert_eq!(config.definitions.datatypes.len(), 1);

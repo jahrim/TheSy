@@ -24,10 +24,9 @@ use itertools::{Either, Itertools};
 use serde_json;
 use structopt::StructOpt;
 
-use egg::*;
-
 use crate::adapter::{EGraph, EasterEgg, Egg, NoOp, Vegg};
 use crate::eggstentions::pretty_string::PrettyString;
+use crate::eggstentions::rewrites::Rewrite;
 use crate::thesy::{example_creator, thesy_parser};
 use crate::thesy::case_split::{CaseSplit, Split};
 use crate::thesy::thesy::TheSy;
@@ -64,7 +63,7 @@ struct CliOpt {
     egraph_type: String,
 }
 
-impl<G: EGraph> From<&CliOpt> for TheSyConfig<G> {
+impl From<&CliOpt> for TheSyConfig {
     fn from(opts: &CliOpt) -> Self {
         TheSyConfig::new(
             thesy_parser::parser::parse_file(opts.path.to_str().unwrap().to_string()).unwrap(),
@@ -77,19 +76,18 @@ impl<G: EGraph> From<&CliOpt> for TheSyConfig<G> {
 }
 
 #[derive(Clone)]
-struct TheSyConfig<G: EGraph> {
+struct TheSyConfig {
     definitions: Definitions,
     ph_count: usize,
-    dependencies: Vec<TheSyConfig<G>>,
-    dep_results: Vec<Vec<Rewrite<SymbolLang, ()>>>,
+    dependencies: Vec<TheSyConfig>,
+    dep_results: Vec<Vec<Rewrite>>,
     output: PathBuf,
     prerun: bool,
     proof_mode: bool,
-    egraph_type: PhantomData<G>,
 }
 
-impl<G: EGraph> TheSyConfig<G> {
-    pub fn new(definitions: Definitions, ph_count: usize, dependencies: Vec<TheSyConfig<G>>, output: PathBuf, proof_mode: bool) -> TheSyConfig<G> {
+impl TheSyConfig {
+    pub fn new(definitions: Definitions, ph_count: usize, dependencies: Vec<TheSyConfig>, output: PathBuf, proof_mode: bool) -> TheSyConfig {
         let func_len = definitions.functions.len();
         TheSyConfig {
             definitions,
@@ -99,27 +97,26 @@ impl<G: EGraph> TheSyConfig<G> {
             output,
             prerun: false,
             proof_mode,
-            egraph_type: PhantomData::default()
         }
         // prerun: func_len > 2}
     }
 
-    fn collect_dependencies(&mut self) {
+    fn collect_dependencies<G: EGraph>(&mut self) {
         if self.dep_results.is_empty() {
             self.dep_results = self.dependencies.iter_mut().map(|conf| {
-                conf.run(Some(2)).1
+                conf.run::<G>(Some(2)).1
             }).collect_vec();
         }
     }
 
-    pub fn from_path(path: String) -> TheSyConfig<G> {
+    pub fn from_path(path: String) -> TheSyConfig {
         let definitions = thesy_parser::parser::parse_file(path.clone());
         TheSyConfig::new(definitions.unwrap(), 2, vec![], PathBuf::from(path).with_extension("res"), true)
     }
 
     /// Run thesy using current configuration returning (thesy instance, previous + new rewrites)
-    pub fn run(&mut self, max_depth: Option<usize>) -> (TheSy<G>, Vec<Rewrite<SymbolLang, ()>>) {
-        self.collect_dependencies();
+    pub fn run<G: EGraph>(&mut self, max_depth: Option<usize>) -> (TheSy<G>, Vec<Rewrite>) {
+        self.collect_dependencies::<G>();
         let mut rules = self.definitions.rws.clone();
         rules.extend(self.dep_results.iter().flatten().cloned());
         // Prerun helps prevent state overflow
@@ -129,8 +126,8 @@ impl<G: EGraph> TheSyConfig<G> {
                 let mut new_conf = self.clone();
                 let funcs = vec![f.clone()];
                 new_conf.definitions.functions = funcs;
-                let mut thesy = TheSy::from(&new_conf);
-                let case_split = TheSy::create_case_splitter(new_conf.definitions.case_splitters);
+                let mut thesy = TheSy::<G>::from(&new_conf);
+                let case_split = TheSy::<G>::create_case_splitter(new_conf.definitions.case_splitters);
                 thesy.run(&mut rules, Some(case_split), max_depth.unwrap_or(2));
             }
             for couple in choose(&self.definitions.functions[..], 2) {
@@ -138,8 +135,8 @@ impl<G: EGraph> TheSyConfig<G> {
                 let mut new_conf = self.clone();
                 let funcs = couple.into_iter().cloned().collect_vec();
                 new_conf.definitions.functions = funcs;
-                let mut thesy = TheSy::from(&new_conf);
-                let case_split = TheSy::create_case_splitter(new_conf.definitions.case_splitters);
+                let mut thesy = TheSy::<G>::from(&new_conf);
+                let case_split = TheSy::<G>::create_case_splitter(new_conf.definitions.case_splitters);
                 thesy.run(&mut rules, Some(case_split), max_depth.unwrap_or(2));
             }
         }
@@ -184,8 +181,8 @@ impl<G: EGraph> From<&Definitions> for TheSy<G> {
     }
 }
 
-impl<G: EGraph> From<&TheSyConfig<G>> for TheSy<G> {
-    fn from(conf: &TheSyConfig<G>) -> Self {
+impl<G: EGraph> From<&TheSyConfig> for TheSy<G> {
+    fn from(conf: &TheSyConfig) -> Self {
         let mut dict = conf.definitions.functions.clone();
         for c in conf.definitions.datatypes.iter().flat_map(|d| &d.constructors) {
             dict.push(c.clone());
@@ -238,8 +235,8 @@ fn run_thesy<G: EGraph>(args: &CliOpt) {
     }
 
     let start = SystemTime::now();
-    let mut config = TheSyConfig::<G>::from(args);
-    let thesy = TheSy::from(&config);
+    let mut config = TheSyConfig::from(args);
+    let thesy = TheSy::<G>::from(&config);
     let mut rws = thesy.system_rws.clone();
     rws.extend_from_slice(&config.definitions.rws);
     if args.check_equiv {
@@ -250,7 +247,7 @@ fn run_thesy<G: EGraph>(args: &CliOpt) {
         }
         exit(0)
     }
-    let res = config.run(Some(2));
+    let res = config.run::<G>(Some(2));
     println!("done in {}", SystemTime::now().duration_since(start).unwrap().as_millis());
     if cfg!(feature = "stats") {
         export_json(&res.0, &args.path);
