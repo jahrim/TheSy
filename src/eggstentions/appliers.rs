@@ -1,6 +1,6 @@
-use std::rc::Rc;
+use std::fmt::Display;
 
-use crate::eggstentions::{pretty_string::PrettyString};
+use crate::eggstentions::pretty_string::PrettyString;
 use egg::{Id, SearchMatches, Subst, SymbolLang, Var};
 use itertools::Itertools;
 
@@ -9,8 +9,8 @@ use crate::{adapter::EGraph, eggstentions::searchers::multisearcher::HasVars};
 pub trait AsApplier {
     fn as_applier(self) -> Applier;
 }
-pub trait HasApplyOne { 
-    fn apply_one<G: EGraph>(&self, egraph: &mut G, eclass: Id, subst: &Subst) -> Vec<Id>; 
+pub trait HasApplyOne {
+    fn apply_one<G: EGraph>(&self, egraph: &mut G, eclass: Id, subst: &Subst) -> Vec<Id>;
 }
 pub trait HasApplyMatches {
     fn apply_matches<G: EGraph>(&self, egraph: &mut G, matches: &[SearchMatches]) -> Vec<Id>;
@@ -50,15 +50,9 @@ Applier!({
     Diff(diff::DiffApplier),
     Union(union::UnionApplier),
 });
-impl crate::egg::Applier<SymbolLang, ()> for Applier {
-    fn apply_matches(&self, egraph: &mut egg::EGraph<SymbolLang, ()>, matches: &[SearchMatches]) -> Vec<Id> {
-        HasApplyMatches::apply_matches(self, egraph, matches)
-    }
-    fn apply_one(&self, egraph: &mut egg::EGraph<SymbolLang, ()>, eclass: Id, subst: &Subst) -> Vec<Id> {
-        HasApplyOne::apply_one(self, egraph, eclass, subst)
-    }
-    fn vars(&self) -> Vec<Var> {
-        HasVars::vars(self)
+impl Display for Applier {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
     }
 }
 
@@ -67,12 +61,16 @@ pub mod pattern {
 
     impl AsApplier for &str {
         fn as_applier(self) -> Applier {
-            self.parse::<egg::Pattern<SymbolLang>>().unwrap().as_applier()
+            self.parse::<egg::Pattern<SymbolLang>>()
+                .unwrap()
+                .as_applier()
         }
     }
     impl AsApplier for String {
         fn as_applier(self) -> Applier {
-            self.parse::<egg::Pattern<SymbolLang>>().unwrap().as_applier()
+            self.parse::<egg::Pattern<SymbolLang>>()
+                .unwrap()
+                .as_applier()
         }
     }
     impl AsApplier for egg::Pattern<SymbolLang> {
@@ -109,15 +107,19 @@ pub mod pattern {
 }
 
 pub mod diff {
+    use std::sync::Arc;
+
     use super::*;
 
     #[derive(Clone, Debug)]
-    pub struct DiffApplier{
-        applier: Rc<Applier>
+    pub struct DiffApplier {
+        applier: Arc<Applier>,
     }
     impl DiffApplier {
         pub fn new(applier: impl AsApplier) -> DiffApplier {
-            DiffApplier { applier: Rc::new(applier.as_applier()) }
+            DiffApplier {
+                applier: Arc::new(applier.as_applier()),
+            }
         }
     }
     impl AsApplier for DiffApplier {
@@ -164,7 +166,7 @@ pub mod diff {
 }
 pub mod union {
     use super::*;
-    
+
     #[derive(Clone, Debug)]
     pub struct UnionApplier {
         vars: Vec<Var>,
@@ -190,15 +192,20 @@ pub mod union {
             for mat in matches {
                 for subst in &mat.substs {
                     let first = self.vars.first().unwrap();
-                    let ids = self.vars.iter().skip(1).filter_map(|v| {
-                        let x = *subst.get(*first).unwrap();
-                        let y = *subst.get(*v).unwrap();
-                        if x != y {
-                            Some(egraph.union(x, y))
-                        } else {
-                            None
-                        }
-                    }).collect_vec();
+                    let ids = self
+                        .vars
+                        .iter()
+                        .skip(1)
+                        .filter_map(|v| {
+                            let x = *subst.get(*first).unwrap();
+                            let y = *subst.get(*v).unwrap();
+                            if x != y {
+                                Some(egraph.union(x, y))
+                            } else {
+                                None
+                            }
+                        })
+                        .collect_vec();
                     added.extend(ids)
                 }
             }
@@ -212,7 +219,10 @@ pub mod union {
     }
     impl PrettyString for UnionApplier {
         fn pretty_string(&self) -> String {
-            format!("Union({})", self.vars.iter().map(|x| x.to_string()).join(" "))
+            format!(
+                "Union({})",
+                self.vars.iter().map(|x| x.to_string()).join(" ")
+            )
         }
     }
 }

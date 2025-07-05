@@ -9,6 +9,7 @@ edition = "2018"
 [dependencies]
 egg = { git = "https://github.com/eytans/egg", branch = "releases/cav2021" }
 easter_egg = { package = "easter-egg", version = "0.1.1-dev", git = "https://github.com/eytans/egg.git" } 
+veg = { package = "veg", path = "../versioned-egraphs" }
 cached = "0.18.0"
 itertools= "0.9.0"
 symbolic_expressions = "5.0.3"
@@ -35,3 +36,7 @@ no_expl_split = []
 
 #[build]
 #rustflags = ["-C", "link-args=-Wl,-stack_size,0x100000000"]    # custom flags to pass to all compiler invocations
+
+[profile.release]
+debug = true
+strip = false
