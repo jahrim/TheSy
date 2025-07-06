@@ -36,7 +36,3 @@ no_expl_split = []
 
 #[build]
 #rustflags = ["-C", "link-args=-Wl,-stack_size,0x100000000"]    # custom flags to pass to all compiler invocations
-
-[profile.release]
-debug = true
-strip = false

@@ -47,7 +47,7 @@ mod util;
 // mod smtlib_translator;
 
 /// Arguments to use to run thesy
-#[derive(StructOpt)]
+#[derive(Debug, StructOpt)]
 struct CliOpt {
     /// The path to the file to read
     #[structopt(parse(from_os_str))]
@@ -66,7 +66,7 @@ struct CliOpt {
         name = "egraph type",
         short = "t",
         long = "egraph-type",
-        default_value = "vegg"
+        default_value = "cloning"
     )]
     egraph_type: String,
 }
@@ -264,14 +264,19 @@ fn main() {
     let args = CliOpt::from_args();
     match args.egraph_type.as_str() {
         "noop" => run_thesy::<NoOp>(&args),
-        "egg" => run_thesy::<Egg>(&args),
-        "vegg" => run_thesy::<Veg>(&args),
-        "easteregg" => run_thesy::<EasterEgg>(&args),
-        _ => panic!("Invalid egraph type"),
+        "cloning" => run_thesy::<Egg>(&args),
+        "versioning" => run_thesy::<Veg>(&args),
+        "colors" => run_thesy::<EasterEgg>(&args),
+        _ => panic!(
+            "Invalid egraph type: type '{}' not in {{noop; cloning; versioning; colors}}",
+            args.egraph_type
+        ),
     }
 }
 
 fn run_thesy<G: EGraph>(args: &CliOpt) {
+    println!("Running with arguments: {:?}", args);
+
     use simplelog::*;
     let log_path = args.path.with_extension("log");
     CombinedLogger::init(vec![
@@ -314,6 +319,7 @@ fn run_thesy<G: EGraph>(args: &CliOpt) {
         "done in {}",
         SystemTime::now().duration_since(start).unwrap().as_millis()
     );
+    println!("[stats] branches: {}", thesy.egraph.branch_count());
     if cfg!(feature = "stats") {
         export_json(&res.0, &args.path);
     }
