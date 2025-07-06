@@ -69,6 +69,13 @@ struct CliOpt {
         default_value = "cloning"
     )]
     egraph_type: String,
+    #[structopt(
+        name = "max memory (GB)",
+        short = "m",
+        long = "max-memory",
+        default_value = "4"
+    )]
+    max_memory: usize,
 }
 
 impl From<&CliOpt> for TheSyConfig {
@@ -260,8 +267,16 @@ impl<G: EGraph> From<&TheSyConfig> for TheSy<G> {
     }
 }
 
+/// NOTE cap is a library providing an allocator that tracks memory usage and
+/// enables setting memory limits.
+#[global_allocator]
+static ALLOCATOR: cap::Cap<std::alloc::System> =
+    cap::Cap::new(std::alloc::System, usize::max_value());
+
 fn main() {
     let args = CliOpt::from_args();
+    const GB: usize = 1024 * 1024 * 1024;
+    ALLOCATOR.set_limit(args.max_memory * GB);
     match args.egraph_type.as_str() {
         "noop" => run_thesy::<NoOp>(&args),
         "cloning" => run_thesy::<Egg>(&args),
