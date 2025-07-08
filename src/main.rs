@@ -284,7 +284,7 @@ fn main() {
         "vegcloning" => run_thesy::<VegCloning>(&args),
         "colors" => run_thesy::<EasterEgg>(&args),
         _ => panic!(
-            "Invalid egraph type: type '{}' not in {{noop; cloning; versioning; colors}}",
+            "Invalid egraph type: type '{}' not in {{noop; cloning; versioning; vegcloning; colors}}",
             args.egraph_type
         ),
     }
