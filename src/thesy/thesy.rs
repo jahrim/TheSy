@@ -1032,7 +1032,7 @@ mod test {
 
     use crate::egg::{Pattern, RecExpr, Symbol, SymbolLang, Var};
 
-    use crate::adapter::{EGraph, EasterEgg, Egg, Veg};
+    use crate::adapter::{EGraph, EasterEgg, Egg, Veg, VegCloning};
     use crate::eggstentions::appliers::*;
     use crate::eggstentions::reconstruct::{reconstruct, reconstruct_all};
     use crate::eggstentions::rewrites::{rewrite, Rewrite};
@@ -1744,4 +1744,5 @@ mod test {
     test_impl!(egg, Egg);
     test_impl!(easter_egg, EasterEgg);
     test_impl!(veg, Veg);
+    test_impl!(vegcloning, VegCloning);
 }

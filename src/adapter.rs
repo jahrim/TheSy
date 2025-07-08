@@ -1938,19 +1938,19 @@ pub mod veg {
         }
     }
     #[derive(Debug)]
-    struct VegExtractor<C> {
+    pub struct VegExtractor<C> {
         enodes_cache: HashMap<Id, Vec<SymbolLang>>,
         cost_cache: HashMap<Id, (SymbolLang, C)>,
     }
     impl<C> VegExtractor<C> {
-        fn new<G: EGraph>(egraph: &G) -> VegExtractor<C> {
+        pub fn new<G: EGraphView>(egraph: &G) -> VegExtractor<C> {
             VegExtractor {
                 enodes_cache: egraph.enodes(),
                 cost_cache: Default::default(),
             }
         }
     }
-    impl Extractor<Veg> for VegExtractor<RepOrder> {
+    impl<G: EGraphView> Extractor<G> for VegExtractor<RepOrder> {
         fn find_best(&mut self, eclass: Id) -> Option<(RepOrder, RecExpr<SymbolLang>)> {
             fn ecost<'a>(
                 eclass: Id,
@@ -2015,6 +2015,306 @@ pub mod veg {
             let mut expr = RecExpr::<SymbolLang>::default();
             build_rec_expr(eclass, &self.cost_cache, &mut expr);
             Some((eclass_cost, expr))
+        }
+    }
+}
+
+pub type VegCloning = vegcloning::VersionedEGraph;
+pub mod vegcloning {
+    use super::*;
+    use crate::veg::structures::egraph::versioned::VersionedEGraph as _;
+    use crate::veg::structures::egraph::{EGraph as _, EGraphView as _};
+
+    pub mod ext {
+        pub use crate::veg::structures::egraph::ematching::machine;
+        pub use crate::veg::structures::egraph::*;
+        pub use crate::veg::util::id::*;
+    }
+
+    #[derive(Debug)]
+    pub struct VersionedEGraph {
+        branches: Vec<ext::basic::EGraph<()>>,
+        checkout: Branch,
+    }
+    impl VersionedEGraph {
+        fn proj(&self) -> &ext::basic::EGraph<()> {
+            &self.branches[self.checkout.id]
+        }
+        fn proj_mut(&mut self) -> &mut ext::basic::EGraph<()> {
+            &mut self.branches[self.checkout.id]
+        }
+    }
+    impl Default for VersionedEGraph {
+        fn default() -> Self {
+            let mut egraph = VersionedEGraph {
+                branches: vec![Default::default()],
+                checkout: Branch { id: 0 },
+            };
+            egraph.checkout(egraph.checkout);
+            egraph
+        }
+    }
+    impl EGraphView for VersionedEGraph {
+        fn classes(&self) -> impl Iterator<Item = Id> {
+            probe_iterator!("classes", "", {
+                // TODO Avoid cloning: for now cloning is required because of
+                // borrow-checking problems with projections
+                use ext::machine::MachineRequirements;
+                self.proj()
+                    .canonicals()
+                    .map(|xc| veg::conversions::id.ic(&xc))
+                    .collect::<Vec<_>>()
+                    .into_iter()
+            })
+        }
+        fn enodes(&self) -> HashMap<Id, Vec<SymbolLang>> {
+            probe!("enodes", "", {
+                self.proj()
+                    .universe()
+                    .map(|xc| {
+                        (
+                            veg::conversions::id.ic(&xc),
+                            veg::conversions::enode.ic(self.proj().get_enode(xc)),
+                        )
+                    })
+                    .into_group_map()
+            })
+        }
+        fn total_number_of_nodes(&self) -> usize {
+            probe!("total_number_of_nodes", "", {
+                self.proj()
+                    .universe()
+                    .map(|xc| {
+                        (
+                            veg::conversions::id.ic(&xc),
+                            veg::conversions::enode.ic(self.proj().get_enode(xc)),
+                        )
+                    })
+                    .count()
+            })
+        }
+        fn lookup(&self, x: &mut SymbolLang) -> Option<Id> {
+            probe!("lookup", "{x:?}", {
+                self.proj()
+                    .get_class(&veg::conversions::enode.c(x))
+                    .map(|xc| veg::conversions::id.ic(xc))
+            })
+        }
+        fn find(&self, x: Id) -> Id {
+            probe!("find", "{x}", {
+                veg::conversions::id.ic(&self.proj().find(veg::conversions::id.c(&x)))
+            })
+        }
+
+        fn search_pattern(&self, searcher: &Pattern<SymbolLang>) -> Vec<SearchMatches> {
+            probe!("search_pattern", "{searcher:?}", {
+                let searcher = veg::conversions::mpattern.c(searcher);
+                let r = ext::machine::CanEMatch::ematch(&searcher, self.proj())
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, m)| {
+                        let result = SearchMatches {
+                            eclass: veg::conversions::id.ic(&m.eclass),
+                            substs: m
+                                .substs
+                                .into_iter()
+                                .map(|s| veg::conversions::msubst.ic(&s))
+                                .collect(),
+                        };
+                        result
+                    })
+                    .collect();
+                r
+            })
+        }
+
+        fn extractor(&self) -> impl Extractor<Self> {
+            veg::VegExtractor::new(self)
+        }
+
+        fn branch(&self) -> Branch {
+            self.checkout
+        }
+        fn branch_count(&self) -> usize {
+            self.branches.len()
+        }
+    }
+    impl EGraph for VersionedEGraph {
+        fn add(&mut self, xn: SymbolLang) -> Id {
+            probe!("add", "{xn:?}", {
+                let xc: ext::EClass = self.proj_mut().add(veg::conversions::enode.c(&xn));
+                veg::conversions::id.ic(&xc)
+            })
+        }
+        fn add_expr(&mut self, recx: &RecExpr<SymbolLang>) -> Id {
+            probe!("add_expr", "{recx:?}", {
+                let mut cs: Vec<ext::EClass> = vec![];
+                let mut proj = self.proj_mut();
+                for xn in veg::conversions::recexpr::<SymbolLang>::new().c(recx) {
+                    cs.push(
+                        proj.add(ext::ENode::application(
+                            veg::conversions::op.c(&xn.op),
+                            xn.children
+                                .iter()
+                                .map(|arg| cs[Into::<usize>::into(*arg)])
+                                .collect(),
+                        )),
+                    );
+                }
+                veg::conversions::id.ic(cs.last().unwrap())
+            })
+        }
+        fn union(&mut self, x: Id, y: Id) -> Id {
+            probe!("union", "{x} {y}", {
+                veg::conversions::id.ic(&self
+                    .proj_mut()
+                    .union(veg::conversions::id.c(&x), veg::conversions::id.c(&y)))
+            })
+        }
+        fn rebuild(&mut self) {
+            probe!("rebuild", "", self.proj_mut().rebuild())
+        }
+        fn equivs(&mut self, recx: &RecExpr<SymbolLang>, recy: &RecExpr<SymbolLang>) -> Vec<Id> {
+            fn lookup_expr<G: ext::EGraph>(
+                egraph: &mut G,
+                recx: &RecExpr<SymbolLang>,
+            ) -> Option<ext::EClass> {
+                let mut cs: Vec<ext::EClass> = vec![];
+                for xn in veg::conversions::recexpr::<SymbolLang>::new().c(recx) {
+                    let xc = egraph.get_class(&ext::ENode::application(
+                        veg::conversions::op.c(&xn.op),
+                        xn.children
+                            .iter()
+                            .map(|arg| cs[Into::<usize>::into(*arg)])
+                            .collect(),
+                    ));
+                    if let Some(xc) = xc {
+                        cs.push(egraph.find(*xc));
+                    } else {
+                        return None;
+                    }
+                }
+                cs.last().cloned()
+            }
+            probe!("equivs", "{recx:?} {recy:?}", {
+                let mut proj = self.proj_mut();
+                let xc = lookup_expr(proj, recx);
+                let yc = lookup_expr(proj, recy);
+                xc.filter(|xc| yc.is_some_and(|yc| *xc == yc))
+                    .map(|xc| vec![veg::conversions::id.ic(&xc)])
+                    .unwrap_or_default()
+            })
+        }
+
+        fn write_pattern(
+            &mut self,
+            applier: &Pattern<SymbolLang>,
+            eclass: Id,
+            subst: &Subst,
+        ) -> Vec<Id> {
+            probe!("write_pattern", "{applier:?} {eclass} {subst:?}", {
+                let applier = veg::conversions::mpattern.c(applier);
+                let eclass = veg::conversions::id.c(&eclass);
+                let subst = veg::conversions::msubst.c(subst);
+                ext::machine::CanBind::bind(&applier, self.proj_mut(), eclass, &subst)
+                    .into_iter()
+                    .map(|c| veg::conversions::id.ic(&c))
+                    .collect()
+            })
+        }
+        fn run(&mut self, config: &RunnerConfig, rules: &[Rewrite]) -> Option<StopReason> {
+            fn check_time(
+                result: &mut Result<(), StopReason>,
+                start_time: Instant,
+                config: &RunnerConfig,
+            ) {
+                if let Some(timeout) = config.timeout {
+                    let elapsed = start_time.elapsed();
+                    if elapsed > timeout {
+                        *result = Err(StopReason::TimeLimit(elapsed.as_secs_f64()));
+                    }
+                }
+            }
+            fn check_nodes<G: ext::EGraphView>(
+                result: &mut Result<(), StopReason>,
+                egraph: &G,
+                config: &RunnerConfig,
+            ) {
+                if let Some(node_limit) = config.node_limit {
+                    let size = egraph.universe().count();
+                    if size > node_limit {
+                        *result = Err(StopReason::NodeLimit(size));
+                    }
+                }
+            }
+            fn check_iters(
+                result: &mut Result<(), StopReason>,
+                iterations: usize,
+                config: &RunnerConfig,
+            ) {
+                if let Some(iter_limit) = config.iter_limit {
+                    if iterations > iter_limit {
+                        *result = Err(StopReason::IterationLimit(iterations));
+                    }
+                }
+            }
+
+            probe!("run", "{rules:?}", {
+                let rules = rules.iter().collect::<Vec<_>>();
+                let mut iterations: usize = 0;
+                let mut result: Result<(), StopReason> = Ok(());
+                let start_time: Instant = Instant::now();
+                loop {
+                    // crate::veg::util::memory::HasMemory::default_print_memory(&self.egraph);
+                    self.proj_mut().rebuild();
+
+                    if result.is_ok() {
+                        check_time(&mut result, start_time, config);
+                        check_nodes(&mut result, self.proj(), config);
+                        check_iters(&mut result, iterations, config);
+                    }
+                    if let Err(stop_reason) = result {
+                        return Some(stop_reason);
+                    }
+
+                    let mut matches: Vec<Vec<SearchMatches>> = Vec::new();
+                    for rule in rules.iter() {
+                        matches.push(rule.searcher.search(self));
+                        check_time(&mut result, start_time, config);
+                        if let Err(timeout) = result {
+                            return Some(timeout);
+                        }
+                    }
+
+                    let mut applications: HashMap<&String, usize> = HashMap::new();
+                    for (rule, matched) in rules.iter().zip(matches) {
+                        let new_applications = rule.applier.apply_matches(self, &matched).len();
+                        if new_applications > 0 {
+                            *applications.entry(rule.name()).or_default() += new_applications;
+                        }
+                        check_time(&mut result, start_time, config);
+                        if let Err(timeout) = result {
+                            return Some(timeout);
+                        }
+                    }
+
+                    if applications.is_empty() {
+                        result = Err(StopReason::Saturated)
+                    }
+                    iterations += 1;
+                }
+            })
+        }
+
+        fn branchout(&mut self) -> Branch {
+            let current = &self.branches[self.checkout.id];
+            self.branches.push(current.clone());
+            Branch {
+                id: self.branches.len() - 1,
+            }
+        }
+        fn checkout(&mut self, branch: Branch) {
+            self.checkout = branch
         }
     }
 }
