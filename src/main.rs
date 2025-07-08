@@ -26,7 +26,7 @@ use itertools::{Either, Itertools};
 use serde_json;
 use structopt::StructOpt;
 
-use crate::adapter::{EGraph, EasterEgg, Egg, NoOp, Veg};
+use crate::adapter::{EGraph, EasterEgg, Egg, NoOp, Veg, VegCloning};
 use crate::eggstentions::pretty_string::PrettyString;
 use crate::eggstentions::rewrites::Rewrite;
 use crate::thesy::case_split::{CaseSplit, Split};
@@ -281,6 +281,7 @@ fn main() {
         "noop" => run_thesy::<NoOp>(&args),
         "cloning" => run_thesy::<Egg>(&args),
         "versioning" => run_thesy::<Veg>(&args),
+        "vegcloning" => run_thesy::<VegCloning>(&args),
         "colors" => run_thesy::<EasterEgg>(&args),
         _ => panic!(
             "Invalid egraph type: type '{}' not in {{noop; cloning; versioning; colors}}",
