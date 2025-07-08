@@ -2047,7 +2047,7 @@ pub mod vegcloning {
     impl Default for VersionedEGraph {
         fn default() -> Self {
             let mut egraph = VersionedEGraph {
-                branches: vec![Default::default()],
+                branches: vec![ext::basic::EGraph::<()>::with_ematching_cache()],
                 checkout: Branch { id: 0 },
             };
             egraph.checkout(egraph.checkout);
