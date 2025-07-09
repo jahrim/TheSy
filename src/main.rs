@@ -335,7 +335,7 @@ fn run_thesy<G: EGraph>(args: &CliOpt) {
         "done in {}",
         SystemTime::now().duration_since(start).unwrap().as_millis()
     );
-    println!("[stats] branches: {}", thesy.egraph.branch_count());
+    println!("Branches: {}", thesy.egraph.branch_count());
     if cfg!(feature = "stats") {
         export_json(&res.0, &args.path);
     }
