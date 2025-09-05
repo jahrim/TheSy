@@ -76,6 +76,8 @@ struct CliOpt {
         default_value = "4"
     )]
     max_memory: usize,
+    #[structopt(name = "disable output files", long = "no-output-files")]
+    no_output_files: bool,
 }
 
 impl From<&CliOpt> for TheSyConfig {
@@ -86,6 +88,7 @@ impl From<&CliOpt> for TheSyConfig {
             vec![],
             opts.path.with_extension("res.th"),
             opts.proof_mode,
+            opts.no_output_files,
         )
     }
 }
@@ -99,6 +102,7 @@ struct TheSyConfig {
     output: PathBuf,
     prerun: bool,
     proof_mode: bool,
+    no_output_files: bool,
 }
 
 impl TheSyConfig {
@@ -108,6 +112,7 @@ impl TheSyConfig {
         dependencies: Vec<TheSyConfig>,
         output: PathBuf,
         proof_mode: bool,
+        no_output_files: bool,
     ) -> TheSyConfig {
         let func_len = definitions.functions.len();
         TheSyConfig {
@@ -118,6 +123,7 @@ impl TheSyConfig {
             output,
             prerun: false,
             proof_mode,
+            no_output_files,
         }
         // prerun: func_len > 2}
     }
@@ -140,6 +146,7 @@ impl TheSyConfig {
             vec![],
             PathBuf::from(path).with_extension("res"),
             true,
+            false,
         )
     }
 
@@ -201,10 +208,12 @@ impl TheSyConfig {
                 }
             })
             .join("\n");
-        File::create(&self.output)
-            .unwrap()
-            .write_all(new_rules_text.as_bytes())
-            .unwrap();
+        if !self.no_output_files {
+            File::create(&self.output)
+                .unwrap()
+                .write_all(new_rules_text.as_bytes())
+                .unwrap();
+        }
         (thesy, rules)
     }
 }
@@ -279,10 +288,10 @@ fn main() {
     ALLOCATOR.set_limit(args.max_memory * GB);
     match args.egraph_type.as_str() {
         "noop" => run_thesy::<NoOp>(&args),
-        "cloning" => run_thesy::<Egg>(&args),
-        "versioning" => run_thesy::<Veg>(&args),
-        "vegcloning" => run_thesy::<VegCloning>(&args),
-        "colors" => run_thesy::<EasterEgg>(&args),
+        "egg" => run_thesy::<Egg>(&args),
+        "versioned" => run_thesy::<Veg>(&args),
+        "cloning" => run_thesy::<VegCloning>(&args),
+        "colored" => run_thesy::<EasterEgg>(&args),
         _ => panic!(
             "Invalid egraph type: type '{}' not in {{noop; cloning; versioning; vegcloning; colors}}",
             args.egraph_type
@@ -294,15 +303,18 @@ fn run_thesy<G: EGraph>(args: &CliOpt) {
     println!("Running with arguments: {:?}", args);
 
     use simplelog::*;
-    let log_path = args.path.with_extension("log");
-    CombinedLogger::init(vec![
-        TermLogger::new(LevelFilter::Debug, Config::default(), TerminalMode::Mixed),
-        WriteLogger::new(
-            LevelFilter::Info,
-            Config::default(),
-            File::create(log_path).unwrap(),
-        ),
-    ])
+    if !args.no_output_files {
+        CombinedLogger::init(vec![
+            TermLogger::new(LevelFilter::Debug, Config::default(), TerminalMode::Mixed),
+            WriteLogger::new(
+                LevelFilter::Info,
+                Config::default(),
+                File::create(args.path.with_extension("log")).unwrap(),
+            ),
+        ])
+    } else {
+        SimpleLogger::init(LevelFilter::Off, Config::default())
+    }
     .unwrap();
 
     if cfg!(feature = "stats") {
