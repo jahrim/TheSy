@@ -630,7 +630,7 @@ impl Prover {
 mod tests {
     use ::egg::{Pattern, SymbolLang};
 
-    use crate::adapter::{EGraph, EasterEgg, Egg, Veg, VegCloning};
+    use crate::adapter::{EGraph, EasterEgg, Egg, Veg, VegCloningBasic, VegCloningPersistent};
     use crate::eggstentions::searchers::multisearcher::HasSearch;
     use crate::lang::{DataType, Function};
     use crate::thesy::prover::Prover;
@@ -713,5 +713,6 @@ mod tests {
     test_impl!(egg, Egg);
     test_impl!(easter_egg, EasterEgg);
     test_impl!(veg, Veg);
-    test_impl!(vegcloning, VegCloning);
+    test_impl!(vegcloning, VegCloningBasic);
+    test_impl!(vegcloning_persistent, VegCloningPersistent);
 }

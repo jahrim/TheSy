@@ -34,6 +34,18 @@ stats = ["serde", "serde_json", "egg/serde-1"]
 split_clone = []
 no_split = ["no_expl_split"]
 no_expl_split = []
+trace = []
+
+# Veg Features
+veg-pc-none = ["veg/pc-none"]
+veg-pc-split = ["veg/pc-split"]
+veg-pc-half = ["veg/pc-half"]
+veg-pc-full = ["veg/pc-full"]
+veg-trace-unionfind = ["trace","veg/trace-unionfind"]
+veg-trace-egraph = ["trace","veg/trace-egraph"]
+veg-trace-disequalities = ["trace","veg/trace-disequalities"]
+veg-trace-machine = ["trace","veg/trace-machine"]
+veg-trace-all = ["trace","veg/trace-all"]
 
 #[build]
 #rustflags = ["-C", "link-args=-Wl,-stack_size,0x100000000"]    # custom flags to pass to all compiler invocations

@@ -1409,7 +1409,7 @@ pub mod veg {
         }
         impl BiConversion for op {
             fn inverse_conversion(&self, source: &Self::Right) -> Self::Left {
-                crate::egg::Symbol::from(ext::SymbolIds::to_string(*source))
+                crate::egg::Symbol::from(ext::SymbolIds::to_string(*source).unwrap())
             }
         }
         #[allow(non_camel_case_types)]
@@ -1997,10 +1997,12 @@ pub mod veg {
     }
 }
 
-pub type VegCloning = vegcloning::VersionedEGraph;
+pub type VegCloning<G> = vegcloning::VersionedEGraph<G>;
+pub type VegCloningBasic = VegCloning<crate::veg::structures::egraph::basic::EGraph<()>>;
+pub type VegCloningPersistent = VegCloning<crate::veg::structures::egraph::persistent::EGraph<()>>;
+
 pub mod vegcloning {
     use super::*;
-    use crate::veg::structures::egraph::versioned::VersionedEGraph as _;
     use crate::veg::structures::egraph::{EGraph as _, EGraphView as _};
 
     pub mod ext {
@@ -2009,30 +2011,52 @@ pub mod vegcloning {
         pub use crate::veg::util::id::*;
     }
 
+    trait EmatchingCache {
+        fn with_ematching_cache() -> Self;
+    }
+    impl<A: ext::Analysis> EmatchingCache for ext::basic::EGraph<A> {
+        fn with_ematching_cache() -> Self {
+            Self::with_ematching_cache()
+        }
+    }
+    impl<A: ext::Analysis> EmatchingCache for ext::persistent::EGraph<A> {
+        fn with_ematching_cache() -> Self {
+            Self::with_ematching_cache()
+        }
+    }
+
     #[derive(Debug)]
-    pub struct VersionedEGraph {
-        branches: Vec<ext::basic::EGraph<()>>,
+    pub struct VersionedEGraph<
+        G: ext::EGraph + ext::machine::MachineRequirements + Debug + Clone + EmatchingCache,
+    > {
+        branches: Vec<G>,
         checkout: Branch,
     }
-    impl VersionedEGraph {
-        fn proj(&self) -> &ext::basic::EGraph<()> {
+    impl<G: ext::EGraph + ext::machine::MachineRequirements + Debug + Clone + EmatchingCache>
+        VersionedEGraph<G>
+    {
+        fn proj(&self) -> &G {
             &self.branches[self.checkout.id]
         }
-        fn proj_mut(&mut self) -> &mut ext::basic::EGraph<()> {
+        fn proj_mut(&mut self) -> &mut G {
             &mut self.branches[self.checkout.id]
         }
     }
-    impl Default for VersionedEGraph {
+    impl<G: ext::EGraph + ext::machine::MachineRequirements + Debug + Clone + EmatchingCache>
+        Default for VersionedEGraph<G>
+    {
         fn default() -> Self {
             let mut egraph = VersionedEGraph {
-                branches: vec![ext::basic::EGraph::<()>::with_ematching_cache()],
+                branches: vec![G::with_ematching_cache()],
                 checkout: Branch { id: 0 },
             };
             egraph.checkout(egraph.checkout);
             egraph
         }
     }
-    impl EGraphView for VersionedEGraph {
+    impl<G: ext::EGraph + ext::machine::MachineRequirements + Debug + Clone + EmatchingCache>
+        EGraphView for VersionedEGraph<G>
+    {
         fn classes(&self) -> impl Iterator<Item = Id> {
             // TODO Avoid cloning: for now cloning is required because of
             // borrow-checking problems with projections
@@ -2105,7 +2129,9 @@ pub mod vegcloning {
             self.branches.len()
         }
     }
-    impl EGraph for VersionedEGraph {
+    impl<G: ext::EGraph + ext::machine::MachineRequirements + Debug + Clone + EmatchingCache> EGraph
+        for VersionedEGraph<G>
+    {
         fn add(&mut self, xn: SymbolLang) -> Id {
             let xc: ext::EClass = self.proj_mut().add(veg::conversions::enode.c(&xn));
             veg::conversions::id.ic(&xc)

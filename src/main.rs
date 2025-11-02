@@ -26,7 +26,7 @@ use itertools::{Either, Itertools};
 use serde_json;
 use structopt::StructOpt;
 
-use crate::adapter::{EGraph, EasterEgg, Egg, NoOp, Veg, VegCloning};
+use crate::adapter::{EGraph, EasterEgg, Egg, NoOp, Veg, VegCloningBasic, VegCloningPersistent};
 use crate::eggstentions::pretty_string::PrettyString;
 use crate::eggstentions::rewrites::Rewrite;
 use crate::thesy::case_split::{CaseSplit, Split};
@@ -281,19 +281,45 @@ impl<G: EGraph> From<&TheSyConfig> for TheSy<G> {
 #[global_allocator]
 static ALLOCATOR: cap::Cap<std::alloc::System> =
     cap::Cap::new(std::alloc::System, usize::max_value());
+const GB: usize = 1024 * 1024 * 1024;
+
+// NOTE use the allocator below to debug crashed due to large allocations
+// use std::alloc::{handle_alloc_error, GlobalAlloc, Layout, System};
+// unsafe extern "C" {
+//     unsafe fn write(fd: i32, buf: *const u8, count: usize) -> isize;
+// }
+// struct LoggingAlloc;
+// unsafe impl GlobalAlloc for LoggingAlloc {
+//     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+//         let size = layout.size();
+
+//         const MAX_ALLOC: usize = 4 * GB;
+//         if size > MAX_ALLOC {
+//             panic!("allocation too large: {size} bytes");
+//         }
+//         ALLOCATOR.alloc(layout)
+//     }
+//     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+//         ALLOCATOR.dealloc(ptr, layout)
+//     }
+// }
+// #[global_allocator]
+// static A: LoggingAlloc = LoggingAlloc;
 
 fn main() {
+    #[cfg(feature = "trace")]
+    veg::util::debug::init_default_tracing_subscriber(true);
     let args = CliOpt::from_args();
-    const GB: usize = 1024 * 1024 * 1024;
     ALLOCATOR.set_limit(args.max_memory * GB);
     match args.egraph_type.as_str() {
         "noop" => run_thesy::<NoOp>(&args),
         "egg" => run_thesy::<Egg>(&args),
         "versioned" => run_thesy::<Veg>(&args),
-        "cloning" => run_thesy::<VegCloning>(&args),
+        "cloning" => run_thesy::<VegCloningBasic>(&args),
+        "persistent" => run_thesy::<VegCloningPersistent>(&args),
         "colored" => run_thesy::<EasterEgg>(&args),
         _ => panic!(
-            "Invalid egraph type: type '{}' not in {{noop; cloning; versioning; vegcloning; colors}}",
+            "Invalid egraph type: type '{}' not in {{noop; egg; versioned; cloning; persistent; colored}}",
             args.egraph_type
         ),
     }
@@ -302,20 +328,23 @@ fn main() {
 fn run_thesy<G: EGraph>(args: &CliOpt) {
     println!("Running with arguments: {:?}", args);
 
-    use simplelog::*;
-    if !args.no_output_files {
-        CombinedLogger::init(vec![
-            TermLogger::new(LevelFilter::Debug, Config::default(), TerminalMode::Mixed),
-            WriteLogger::new(
-                LevelFilter::Info,
-                Config::default(),
-                File::create(args.path.with_extension("log")).unwrap(),
-            ),
-        ])
-    } else {
-        SimpleLogger::init(LevelFilter::Off, Config::default())
+    #[cfg(not(feature = "trace"))]
+    {
+        use simplelog::*;
+        if !args.no_output_files {
+            CombinedLogger::init(vec![
+                TermLogger::new(LevelFilter::Debug, Config::default(), TerminalMode::Mixed),
+                WriteLogger::new(
+                    LevelFilter::Info,
+                    Config::default(),
+                    File::create(args.path.with_extension("log")).unwrap(),
+                ),
+            ])
+        } else {
+            SimpleLogger::init(LevelFilter::Off, Config::default())
+        }
+        .unwrap();
     }
-    .unwrap();
 
     if cfg!(feature = "stats") {
         warn!("Collecting statistics");
@@ -347,7 +376,7 @@ fn run_thesy<G: EGraph>(args: &CliOpt) {
         "done in {}",
         SystemTime::now().duration_since(start).unwrap().as_millis()
     );
-    println!("Branches: {}", thesy.egraph.branch_count());
+    println!("Branches: {}", res.0.egraph.branch_count());
     if cfg!(feature = "stats") {
         export_json(&res.0, &args.path);
     }
