@@ -308,7 +308,7 @@ const GB: usize = 1024 * 1024 * 1024;
 
 fn main() {
     #[cfg(feature = "trace")]
-    veg::util::debug::init_default_tracing_subscriber(true);
+    veg::util::debug::tracing::init_default_tracing_subscriber(false);
     let args = CliOpt::from_args();
     ALLOCATOR.set_limit(args.max_memory * GB);
     match args.egraph_type.as_str() {

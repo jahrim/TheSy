@@ -656,6 +656,7 @@ mod tests {
         egraph.add_expr("(ltwf x y)".parse().as_ref().unwrap());
         egraph.add_expr("(ltwf y z)".parse().as_ref().unwrap());
         egraph.run(&Default::default(), &vec![Prover::wfo_trans()][..]);
+        egraph.rebuild();
         let pat: Pattern<SymbolLang> = "(ltwf x z)".parse().unwrap();
         assert!(pat.search(&egraph).iter().all(|s| !s.substs.is_empty()));
         assert!(!pat.search(&egraph).is_empty());
@@ -668,6 +669,7 @@ mod tests {
             &Default::default(),
             &Prover::wfo_datatype(&create_nat_type())[..],
         );
+        egraph.rebuild();
         let pat: Pattern<SymbolLang> = "(ltwf y (S y))".parse().unwrap();
         assert!(pat.search(&egraph).iter().all(|s| !s.substs.is_empty()));
         assert!(!pat.search(&egraph).is_empty());

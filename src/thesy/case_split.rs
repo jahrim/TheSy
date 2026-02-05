@@ -141,6 +141,7 @@ impl<G: EGraph> CaseSplit<G> {
     pub fn find_splitters(&mut self, egraph: &mut G) -> Vec<Split> {
         let mut res = vec![];
         for (s, c) in &mut self.splitter_rules {
+            egraph.rebuild();
             res.extend(c(egraph, s.search(egraph)));
         }
         let f = res.into_iter().unique().collect_vec();

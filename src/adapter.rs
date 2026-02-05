@@ -980,8 +980,6 @@ pub mod easteregg {
         fn search_pattern(&self, searcher: &Pattern<SymbolLang>) -> Vec<SearchMatches> {
             // NOTE easteregg complains about searching a dirty e-graph.
             // This ensures that the egraph is not dirty.
-            unsafe { crate::util::tools::as_mut(self.egraph.deref()) }.rebuild();
-
             let searcher = conversions::pattern.c(searcher);
             let mconversion = conversions::matches {
                 vars: &searcher.vars(),

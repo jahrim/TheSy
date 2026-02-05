@@ -521,6 +521,7 @@ impl<G: EGraph> TheSy<G> {
             SymbolLang::new(edge.op.clone(), new_child)
         }
 
+        self.egraph.rebuild();
         let op_matches = self
             .searchers
             .iter()
@@ -896,6 +897,7 @@ impl<G: EGraph> TheSy<G> {
         )>,
         new_rules_index: usize,
     ) -> bool {
+        self.egraph.rebuild();
         let measure_splits = if cfg!(feature = "stats") {
             let n = case_split::split_patterns
                 .iter()
@@ -1294,6 +1296,7 @@ mod test {
     fn does_not_create_unneeded_terms<G: EGraph>() {
         let nat_type = create_nat_type();
         let mut syg = TheSy::<G>::new(nat_type.clone(), Examples::new(&nat_type, 0), vec![]);
+        syg.egraph.rebuild();
         let anchor_patt: Searcher = "(typed ?x ?y)".as_searcher();
         let results0 = anchor_patt.search(&syg.egraph);
         // Zero, S (functions are also in graph), ph1, ph0, (true false)
@@ -1302,6 +1305,7 @@ mod test {
             results0.iter().map(|x| x.substs.len()).sum::<usize>()
         );
         syg.increase_depth();
+        syg.egraph.rebuild();
         // Zero, S, S Zero, ph1, S ph1, ph0, S ph0, (true false)
         assert_eq!(
             9usize,
@@ -1312,6 +1316,7 @@ mod test {
                 .sum::<usize>()
         );
         syg.increase_depth();
+        syg.egraph.rebuild();
         assert_eq!(
             12usize,
             anchor_patt
@@ -1340,6 +1345,7 @@ mod test {
             3,
             None,
         );
+        syg.egraph.rebuild();
 
         let results0 = anchor_patt.search(&syg.egraph);
         // Zero, x, ph1, ph0, ph2, (true false)
@@ -1348,6 +1354,7 @@ mod test {
             results0.iter().map(|x| x.substs.len()).sum::<usize>()
         );
         syg.increase_depth();
+        syg.egraph.rebuild();
         let results1 = anchor_patt.search(&syg.egraph);
         // 7 + 16
         assert_eq!(
@@ -1355,6 +1362,7 @@ mod test {
             results1.iter().map(|x| x.substs.len()).sum::<usize>()
         );
         syg.increase_depth();
+        syg.egraph.rebuild();
         // 7 + 16 + 20*20 - 16
         let results2 = anchor_patt.search(&syg.egraph);
         assert_eq!(
@@ -1453,6 +1461,7 @@ mod test {
         let (list_type, dict, mut thesy) = create_filter_thesy::<G>();
         thesy.increase_depth();
         thesy.increase_depth();
+        thesy.egraph.rebuild();
         let phs = TheSy::<G>::collect_phs(dict.iter().chain(list_type.constructors.iter()), 3)
             .into_iter()
             .filter(|x| !x.params.is_empty())
