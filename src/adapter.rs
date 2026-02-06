@@ -1040,6 +1040,7 @@ pub mod easteregg {
             self.egraph.rebuild();
         }
         fn equivs(&mut self, left: &RecExpr<SymbolLang>, right: &RecExpr<SymbolLang>) -> Vec<Id> {
+            self.rebuild();
             let matches1 = easter_egg::Searcher::search(
                 &ColoredSearcher {
                     searcher: Pattern::from(left.as_ref()).as_searcher(),
