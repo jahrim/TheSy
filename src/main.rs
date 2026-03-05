@@ -29,20 +29,20 @@ use structopt::StructOpt;
 use crate::adapter::{EGraph, EasterEgg, NoOp, Veg, VegCloningBasic, VegCloningPersistent};
 use crate::eggstentions::pretty_string::PrettyString;
 use crate::eggstentions::rewrites::Rewrite;
+use crate::thesy::{example_creator, thesy_parser};
 use crate::thesy::case_split::{CaseSplit, Split};
 use crate::thesy::thesy::TheSy;
 use crate::thesy::thesy_parser::parser::Definitions;
-use crate::thesy::{example_creator, thesy_parser};
 use crate::tools::tools::choose;
 use std::rc::Rc;
 
 mod adapter;
 mod eggstentions;
-mod lang;
-mod tests;
-mod thesy;
 mod tools;
+mod thesy;
+mod lang;
 mod tree;
+mod tests;
 // mod smtlib_translator;
 
 /// Arguments to use to run thesy
@@ -61,19 +61,9 @@ struct CliOpt {
     proof_mode: bool,
     #[structopt(name = "check equivalence", short = "c", long = "check-equiv")]
     check_equiv: bool,
-    #[structopt(
-        name = "egraph type",
-        short = "t",
-        long = "egraph-type",
-        default_value = "cloning"
-    )]
+    #[structopt(name = "egraph type", short = "t", long = "egraph-type", default_value = "cloning")]
     egraph_type: String,
-    #[structopt(
-        name = "max memory (GB)",
-        short = "m",
-        long = "max-memory",
-        default_value = "4"
-    )]
+    #[structopt(name = "max memory (GB)", short = "m", long = "max-memory", default_value = "4")]
     max_memory: usize,
     #[structopt(name = "disable output files", long = "no-output-files")]
     no_output_files: bool,
@@ -105,14 +95,7 @@ struct TheSyConfig {
 }
 
 impl TheSyConfig {
-    pub fn new(
-        definitions: Definitions,
-        ph_count: usize,
-        dependencies: Vec<TheSyConfig>,
-        output: PathBuf,
-        proof_mode: bool,
-        no_output_files: bool,
-    ) -> TheSyConfig {
+    pub fn new(definitions: Definitions, ph_count: usize, dependencies: Vec<TheSyConfig>, output: PathBuf, proof_mode: bool, no_output_files: bool) -> TheSyConfig {
         let func_len = definitions.functions.len();
         TheSyConfig {
             definitions,
@@ -129,24 +112,15 @@ impl TheSyConfig {
 
     fn collect_dependencies<G: EGraph>(&mut self) {
         if self.dep_results.is_empty() {
-            self.dep_results = self
-                .dependencies
-                .iter_mut()
-                .map(|conf| conf.run::<G>(Some(2)).1)
-                .collect_vec();
+            self.dep_results = self.dependencies.iter_mut().map(|conf| {
+                conf.run::<G>(Some(2)).1
+            }).collect_vec();
         }
     }
 
     pub fn from_path(path: String) -> TheSyConfig {
         let definitions = thesy_parser::parser::parse_file(path.clone());
-        TheSyConfig::new(
-            definitions.unwrap(),
-            2,
-            vec![],
-            PathBuf::from(path).with_extension("res"),
-            true,
-            false,
-        )
+        TheSyConfig::new(definitions.unwrap(), 2, vec![], PathBuf::from(path).with_extension("res"), true, false)
     }
 
     /// Run thesy using current configuration returning (thesy instance, previous + new rewrites)
@@ -162,8 +136,7 @@ impl TheSyConfig {
                 let funcs = vec![f.clone()];
                 new_conf.definitions.functions = funcs;
                 let mut thesy = TheSy::<G>::from(&new_conf);
-                let case_split =
-                    TheSy::<G>::create_case_splitter(new_conf.definitions.case_splitters);
+                let case_split = TheSy::<G>::create_case_splitter(new_conf.definitions.case_splitters);
                 thesy.run(&mut rules, Some(case_split), max_depth.unwrap_or(2));
             }
             for couple in choose(&self.definitions.functions[..], 2) {
@@ -172,46 +145,25 @@ impl TheSyConfig {
                 let funcs = couple.into_iter().cloned().collect_vec();
                 new_conf.definitions.functions = funcs;
                 let mut thesy = TheSy::<G>::from(&new_conf);
-                let case_split =
-                    TheSy::<G>::create_case_splitter(new_conf.definitions.case_splitters);
+                let case_split = TheSy::<G>::create_case_splitter(new_conf.definitions.case_splitters);
                 thesy.run(&mut rules, Some(case_split), max_depth.unwrap_or(2));
             }
         }
         let mut thesy: TheSy<G> = TheSy::from(&*self);
         // TODO: take a ref
-        let case_split =
-            TheSy::create_case_splitter(std::mem::take(&mut self.definitions.case_splitters));
+        let case_split = TheSy::create_case_splitter(std::mem::take(&mut self.definitions.case_splitters));
         let results = thesy.run(&mut rules, Some(case_split), max_depth.unwrap_or(2));
-        let new_rules_text = results
-            .iter()
-            .map(|(precond, searcher, applier, rw)| {
+        let new_rules_text = results.iter()
+            .map(|(precond, searcher, applier, rw)|
                 if precond.is_some() {
                     let precond = precond.as_ref().unwrap();
-                    format!(
-                        "(=> \"{} |> {} => {}\" (=> {} (= {} {})))",
-                        precond.pretty_string(),
-                        searcher.pretty(1000),
-                        applier.pretty(1000),
-                        precond.pretty_string(),
-                        searcher.pretty(1000),
-                        applier.pretty(1000)
-                    )
+                    format!("(=> \"{} |> {} => {}\" (=> {} (= {} {})))", precond.pretty_string(), searcher.pretty(1000), applier.pretty(1000), precond.pretty_string(), searcher.pretty(1000), applier.pretty(1000))
                 } else {
-                    format!(
-                        "(=> \"{} => {}\" {} {})",
-                        searcher.pretty(1000),
-                        applier.pretty(1000),
-                        searcher.pretty(1000),
-                        applier.pretty(1000)
-                    )
-                }
-            })
+                    format!("(=> \"{} => {}\" {} {})", searcher.pretty(1000), applier.pretty(1000), searcher.pretty(1000), applier.pretty(1000))
+                })
             .join("\n");
         if !self.no_output_files {
-            File::create(&self.output)
-                .unwrap()
-                .write_all(new_rules_text.as_bytes())
-                .unwrap();
+            File::create(&self.output).unwrap().write_all(new_rules_text.as_bytes()).unwrap();
         }
         (thesy, rules)
     }
@@ -223,9 +175,7 @@ impl<G: EGraph> From<&Definitions> for TheSy<G> {
         for c in defs.datatypes.iter().flat_map(|d| &d.constructors) {
             dict.push(c.clone());
         }
-        let examples = defs
-            .datatypes
-            .iter()
+        let examples = defs.datatypes.iter()
             .map(|d| (d.clone(), example_creator::Examples::new(d, 2)))
             .collect();
         let conjectures = if defs.conjectures.is_empty() {
@@ -234,25 +184,21 @@ impl<G: EGraph> From<&Definitions> for TheSy<G> {
             Some(defs.conjectures.clone())
         };
 
-        TheSy::<G>::new_with_ph(defs.datatypes.clone(), examples, dict, 2, conjectures)
+        TheSy::<G>::new_with_ph(defs.datatypes.clone(),
+                           examples,
+                           dict,
+                           2,
+                           conjectures)
     }
 }
 
 impl<G: EGraph> From<&TheSyConfig> for TheSy<G> {
     fn from(conf: &TheSyConfig) -> Self {
         let mut dict = conf.definitions.functions.clone();
-        for c in conf
-            .definitions
-            .datatypes
-            .iter()
-            .flat_map(|d| &d.constructors)
-        {
+        for c in conf.definitions.datatypes.iter().flat_map(|d| &d.constructors) {
             dict.push(c.clone());
         }
-        let examples = conf
-            .definitions
-            .datatypes
-            .iter()
+        let examples = conf.definitions.datatypes.iter()
             .map(|d| (d.clone(), example_creator::Examples::new(d, 2)))
             .collect();
         let conjectures = if conf.definitions.conjectures.is_empty() {
@@ -265,13 +211,11 @@ impl<G: EGraph> From<&TheSyConfig> for TheSy<G> {
             warn!("Running exploration without proof mode, but goals were given");
         }
 
-        TheSy::<G>::new_with_ph(
-            conf.definitions.datatypes.clone(),
-            examples,
-            dict,
-            conf.ph_count,
-            if conf.proof_mode { conjectures } else { None },
-        )
+        TheSy::<G>::new_with_ph(conf.definitions.datatypes.clone(),
+                           examples,
+                           dict,
+                           conf.ph_count,
+                           if conf.proof_mode { conjectures } else { None })
     }
 }
 
@@ -332,11 +276,7 @@ fn run_thesy<G: EGraph>(args: &CliOpt) {
         if !args.no_output_files {
             CombinedLogger::init(vec![
                 TermLogger::new(LevelFilter::Debug, Config::default(), TerminalMode::Mixed),
-                WriteLogger::new(
-                    LevelFilter::Info,
-                    Config::default(),
-                    File::create(args.path.with_extension("log")).unwrap(),
-                ),
+                WriteLogger::new(LevelFilter::Info, Config::default(), File::create(args.path.with_extension("log")).unwrap()),
             ])
         } else {
             SimpleLogger::init(LevelFilter::Off, Config::default())
@@ -356,29 +296,15 @@ fn run_thesy<G: EGraph>(args: &CliOpt) {
     if args.check_equiv {
         for (vars, precond, ex1, ex2) in &config.definitions.conjectures {
             if TheSy::<G>::check_equality(&rws, precond, ex1, ex2) {
-                println!(
-                    "proved: {}{} = {}",
-                    precond
-                        .as_ref()
-                        .map(|x| format!("{} => ", x.pretty(500)))
-                        .unwrap_or("".to_string()),
-                    ex1.pretty(500),
-                    ex2.pretty(500)
-                )
+                println!("proved: {}{} = {}", precond.as_ref().map(|x| format!("{} => ", x.pretty(500))).unwrap_or("".to_string()), ex1.pretty(500), ex2.pretty(500))
             }
         }
         exit(0)
     }
     let res = config.run::<G>(Some(2));
-    println!(
-        "done in {}",
-        SystemTime::now().duration_since(start).unwrap().as_millis()
-    );
+    println!("done in {}", SystemTime::now().duration_since(start).unwrap().as_millis());
     println!("Branches: {}", res.0.egraph.branch_count());
-    println!(
-        "Backtracking Steps: {}",
-        res.0.egraph.backtracking_steps().unwrap_or_default()
-    );
+    println!("Backtracking Steps: {}", res.0.egraph.backtracking_steps().unwrap_or_default());
     if cfg!(feature = "stats") {
         export_json(&res.0, &args.path);
     }
