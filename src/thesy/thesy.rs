@@ -17,13 +17,13 @@ use crate::eggstentions::expression_ops::{IntoTree, Tree};
 use crate::eggstentions::pretty_string::PrettyString;
 use crate::eggstentions::rewrites::{rewrite, Rewrite};
 use crate::eggstentions::searchers::multisearcher::*;
+use crate::lang::*;
 use crate::thesy::case_split::{CaseSplit, Split, SplitApplier};
 use crate::thesy::example_creator::Examples;
 use crate::thesy::prover::Prover;
 use crate::thesy::statistics::Stats;
 use crate::thesy::{case_split, consts};
 use crate::tools::tools::choose;
-use crate::{lang::*, probe};
 use bimap::BiHashMap;
 use multimap::MultiMap;
 use std::rc::Rc;
@@ -1561,11 +1561,7 @@ mod test {
     fn take_drop_equiv_red<G: EGraph>() {
         // init_logging();
 
-        let mut conf = TheSyConfig::from_path(
-            "frontend/benchmarks/cvc4_translated/isaplanner/goal1.smt2.th"
-                .parse()
-                .unwrap(),
-        );
+        let mut conf = TheSyConfig::from_path("theories/isaplanner_goal1.smt2.th".parse().unwrap());
         let mut thesy = TheSy::<G>::from(&conf);
         let mut case_split = TheSy::<G>::create_case_splitter(conf.definitions.case_splitters);
         let mut rules = std::mem::take(&mut conf.definitions.rws);
@@ -1612,11 +1608,7 @@ mod test {
     // }
 
     fn filtering_searcher_playground<G: EGraph>() {
-        let mut conf = TheSyConfig::from_path(
-            "frontend/benchmarks/cvc4_translated/clam/goal1.smt2.th"
-                .parse()
-                .unwrap(),
-        );
+        let mut conf = TheSyConfig::from_path("theories/clam_goal1.smt2.th".parse().unwrap());
         let mut thesy = TheSy::<G>::from(&conf);
         let rules = std::mem::take(&mut conf.definitions.rws);
         println!("{}", rules.last().unwrap().name());

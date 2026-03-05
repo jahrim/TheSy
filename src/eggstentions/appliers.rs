@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use crate::eggstentions::pretty_string::PrettyString;
+use crate::eggstentions::{pretty_string::PrettyString};
 use egg::{Id, SearchMatches, Subst, SymbolLang, Var};
 use itertools::Itertools;
 
@@ -112,14 +112,12 @@ pub mod diff {
     use super::*;
 
     #[derive(Clone, Debug)]
-    pub struct DiffApplier {
+    pub struct DiffApplier{
         applier: Arc<Applier>,
     }
     impl DiffApplier {
         pub fn new(applier: impl AsApplier) -> DiffApplier {
-            DiffApplier {
-                applier: Arc::new(applier.as_applier()),
-            }
+            DiffApplier { applier: Arc::new(applier.as_applier()) }
         }
     }
     impl AsApplier for DiffApplier {
@@ -192,20 +190,16 @@ pub mod union {
             for mat in matches {
                 for subst in &mat.substs {
                     let first = self.vars.first().unwrap();
-                    let ids = self
-                        .vars
-                        .iter()
-                        .skip(1)
-                        .filter_map(|v| {
-                            let x = *subst.get(*first).unwrap();
-                            let y = *subst.get(*v).unwrap();
-                            if x != y {
-                                Some(egraph.union(x, y))
-                            } else {
-                                None
-                            }
-                        })
-                        .collect_vec();
+                    let ids = self.vars.iter().skip(1).filter_map(|v| {
+                        let x = *subst.get(*first).unwrap();
+                        let y = *subst.get(*v).unwrap();
+                        if x != y {
+                            Some(egraph.union(x, y))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect_vec();
                     added.extend(ids)
                 }
             }
@@ -219,10 +213,7 @@ pub mod union {
     }
     impl PrettyString for UnionApplier {
         fn pretty_string(&self) -> String {
-            format!(
-                "Union({})",
-                self.vars.iter().map(|x| x.to_string()).join(" ")
-            )
+            format!("Union({})", self.vars.iter().map(|x| x.to_string()).join(" "))
         }
     }
 }

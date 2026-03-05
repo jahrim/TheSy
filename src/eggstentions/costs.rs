@@ -16,21 +16,13 @@ impl RepOrder {
     }
 
     fn compare_vars(&self, other: &Self) -> Option<Ordering> {
-        match self
-            .vars
-            .iter()
-            .unique()
-            .count()
-            .partial_cmp(&other.vars.iter().unique().count())
-        {
-            None => Self::count_ph1(&self.vars).partial_cmp(&Self::count_ph1(&other.vars)),
-            Some(ord) => match ord {
-                Ordering::Less => Some(Ordering::Less),
-                Ordering::Equal => {
-                    Self::count_ph1(&self.vars).partial_cmp(&Self::count_ph1(&other.vars))
-                }
-                Ordering::Greater => Some(Ordering::Greater),
-            },
+        match self.vars.iter().unique().count().partial_cmp(&other.vars.iter().unique().count()) {
+            None => { Self::count_ph1(&self.vars).partial_cmp(&Self::count_ph1(&other.vars)) }
+            Some(ord) => { match ord {
+                Ordering::Less => { Some(Ordering::Less) }
+                Ordering::Equal => { Self::count_ph1(&self.vars).partial_cmp(&Self::count_ph1(&other.vars)) }
+                Ordering::Greater => { Some(Ordering::Greater) }
+            }}
         }
     }
 }
@@ -38,12 +30,14 @@ impl RepOrder {
 impl PartialOrd for RepOrder {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         match self.size.partial_cmp(&other.size) {
-            None => other.compare_vars(self),
-            Some(x) => match x {
-                Ordering::Less => Some(Ordering::Less),
-                Ordering::Equal => other.compare_vars(self),
-                Ordering::Greater => Some(Ordering::Greater),
-            },
+            None => { other.compare_vars(self) }
+            Some(x) => {
+                match x {
+                    Ordering::Less => {Some(Ordering::Less)}
+                    Ordering::Equal => { other.compare_vars(self) }
+                    Ordering::Greater => {Some(Ordering::Greater)}
+                }
+            }
         }
     }
 }
@@ -68,35 +62,15 @@ impl CostFunction<SymbolLang> for MinRep {
     /// For this to work properly, your cost function should be
     /// _monotonic_, i.e. `cost` should return a `Cost` greater than
     /// any of the child costs of the given enode.
-    fn cost<C>(&mut self, enode: &SymbolLang, mut costs: C) -> Self::Cost
-    where
-        C: FnMut(Id) -> Self::Cost,
-    {
-        let current_depth = enode
-            .children
-            .iter()
-            .map(|i| costs(*i).depth)
-            .max()
-            .unwrap_or(0);
-        let current_size = enode
-            .children
-            .iter()
-            .map(|i| costs(*i).size)
-            .sum1()
-            .unwrap_or(0);
-        let mut vars = enode
-            .children
-            .iter()
-            .flat_map(|i| costs(*i).vars)
-            .collect_vec();
+    fn cost<C>(&mut self, enode: &SymbolLang, mut costs: C) -> Self::Cost where
+        C: FnMut(Id) -> Self::Cost {
+        let current_depth = enode.children.iter().map(|i| costs(*i).depth).max().unwrap_or(0);
+        let current_size = enode.children.iter().map(|i| costs(*i).size).sum1().unwrap_or(0);
+        let mut vars = enode.children.iter().flat_map(|i| costs(*i).vars).collect_vec();
         if enode.op.as_str().starts_with("ts_ph") {
             vars.push(enode.op.to_string());
         }
-        RepOrder {
-            depth: current_depth + 1,
-            size: current_size + 1,
-            vars,
-        }
+        RepOrder{depth: current_depth + 1, size: current_size + 1, vars}
     }
 }
 
@@ -108,42 +82,12 @@ mod tests {
 
     #[test]
     fn compare_two_different_sizes() {
-        assert!(
-            RepOrder {
-                vars: Vec::new(),
-                depth: 0,
-                size: 1
-            } < RepOrder {
-                vars: Vec::new(),
-                depth: 0,
-                size: 2
-            }
-        );
-        assert!(
-            RepOrder {
-                vars: Vec::from_iter(vec![":".to_string(), "a".to_string(), "b".to_string()]),
-                depth: 0,
-                size: 1
-            } < RepOrder {
-                vars: Vec::new(),
-                depth: 0,
-                size: 2
-            }
-        );
+        assert!(RepOrder{vars: Vec::new(), depth: 0, size: 1} < RepOrder{vars: Vec::new(), depth: 0, size: 2});
+        assert!(RepOrder{vars: Vec::from_iter(vec![":".to_string(), "a".to_string(), "b".to_string()]), depth: 0, size: 1} < RepOrder{vars: Vec::new(), depth: 0, size: 2});
     }
 
     #[test]
     fn compare_two_different_vars() {
-        assert!(
-            RepOrder {
-                vars: Vec::from_iter(vec![":".to_string(), "a".to_string(), "b".to_string()]),
-                depth: 0,
-                size: 2
-            } < RepOrder {
-                vars: Vec::from_iter(vec![":".to_string(), "a".to_string()]),
-                depth: 0,
-                size: 2
-            }
-        );
+        assert!(RepOrder{vars: Vec::from_iter(vec![":".to_string(), "a".to_string(), "b".to_string()]), depth: 0, size: 2} < RepOrder{vars:  Vec::from_iter(vec![":".to_string(), "a".to_string()]), depth: 0, size: 2});
     }
 }

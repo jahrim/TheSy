@@ -8,7 +8,6 @@ use crate::eggstentions::{
     rewrites::Rewrite,
     searchers::multisearcher::{HasSearch, HasSearchEClass, HasVars, Searcher},
 };
-use crate::util::debug::{probe, probe_iterator};
 use itertools::Itertools;
 use std::fmt::Debug;
 use std::str::FromStr;
@@ -181,7 +180,7 @@ pub mod noop {
 
 pub type EasterEgg = easteregg::VersionedEGraph;
 pub mod easteregg {
-    use crate::{eggstentions::searchers::multisearcher::AsSearcher, probe, probe_iterator};
+    use crate::eggstentions::searchers::multisearcher::AsSearcher;
     use std::{
         fmt::Display,
         ops::{Deref, DerefMut},
@@ -971,7 +970,6 @@ pub mod easteregg {
 pub type Veg = veg::VersionedEGraph;
 pub mod veg {
     use super::*;
-    use crate::probe;
     use crate::veg::structures::egraph::versioned::VersionedEGraph as _;
     use crate::veg::structures::egraph::{EGraph as _, EGraphView as _};
 

@@ -43,7 +43,6 @@ mod tests;
 mod thesy;
 mod tools;
 mod tree;
-mod util;
 // mod smtlib_translator;
 
 /// Arguments to use to run thesy

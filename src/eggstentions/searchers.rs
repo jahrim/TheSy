@@ -73,23 +73,11 @@ pub mod multisearcher {
     impl Searcher {
         pub fn get_common_vars(patterns: &mut Vec<Searcher>) -> HashMap<Var, usize> {
             fn count_commons(p: &Searcher, common_vars: &HashMap<Var, usize>) -> usize {
-                p.vars()
-                    .iter()
-                    .map(|v| common_vars.get(v).unwrap_or(&0))
-                    .sum()
+                p.vars().iter().map(|v| common_vars.get(v).unwrap_or(&0)).sum()
             }
-            let common_vars = patterns
-                .iter()
-                .flat_map(|p| p.vars())
-                .grouped(|v| v.clone())
-                .iter()
-                .filter_map(|(k, v)| {
-                    if v.len() <= 1 {
-                        None
-                    } else {
-                        Some((*k, v.len()))
-                    }
-                })
+            let common_vars = patterns.iter().flat_map(|p| p.vars())
+                .grouped(|v| v.clone()).iter()
+                .filter_map(|(k, v)| if v.len() <= 1 { None } else { Some((*k, v.len())) })
                 .collect::<HashMap<Var, usize>>();
             patterns.sort_by_key(|p| count_commons(p, &common_vars));
             common_vars
@@ -101,9 +89,7 @@ pub mod multisearcher {
                 let s1 = sub1.get(v1);
                 let s2 = sub2.get(v1);
                 if s1.is_some() || s2.is_some() {
-                    if s1.is_some() && s2.is_some() {
-                        assert_eq!(s1.as_ref(), s2.as_ref());
-                    }
+                    if s1.is_some() && s2.is_some() { assert_eq!(s1.as_ref(), s2.as_ref()); }
                     res.insert(v1, s1.unwrap_or_else(|| s2.unwrap()).clone());
                 }
             }
@@ -113,16 +99,18 @@ pub mod multisearcher {
         pub fn aggregate_substs(
             possibilities: &[HashMap<Vec<Option<Id>>, Vec<Subst>>],
             limits: Vec<&Option<Id>>,
-            all_vars: &Vec<Var>,
+            all_vars: &Vec<Var>
         ) -> Vec<Subst> {
             let current = possibilities.first().unwrap();
             // TODO: if matches can be taken directly from limitations then do so
-            let matches = current.iter().filter(|(keys, _)| {
-                limits.iter().zip(keys.iter()).all(|(lim, key)| {
-                    lim.as_ref()
-                        .map_or(true, |l| key.as_ref().map_or(true, |k| k == l))
-                })
-            });
+            let matches = current
+                .iter()
+                .filter(|(keys, _)| 
+                    limits
+                        .iter()
+                        .zip(keys.iter())
+                        .all(|(lim, key)| lim.as_ref().map_or(true, |l| key.as_ref().map_or(true, |k| k == l)))
+                );
             if possibilities.len() > 1 {
                 let mut collected = Vec::new();
                 for (key, val) in matches {
@@ -131,36 +119,27 @@ pub mod multisearcher {
                         .zip(key)
                         .map(|(l, k)| if l.is_some() { l } else { k })
                         .collect();
-                    let rec_res =
-                        Searcher::aggregate_substs(&possibilities[1..], new_limit, all_vars);
-                    collected.extend(
-                        rec_res
-                            .iter()
-                            .cartesian_product(val)
-                            .map(|(s1, s2)| Searcher::merge_substs(all_vars, s1, s2)),
-                    );
+                    let rec_res = Searcher::aggregate_substs(&possibilities[1..], new_limit, all_vars);
+                    collected.extend(rec_res.iter().cartesian_product(val).map(|(s1, s2)| Searcher::merge_substs(all_vars, s1, s2)));
                 }
                 collected
             } else {
-                matches
-                    .flat_map(|(_, v)| v.iter().map(|s| Searcher::merge_substs(all_vars, s, s)))
-                    .collect()
+                matches.flat_map(|(_, v)| v.iter().map(|s| Searcher::merge_substs(all_vars, s, s))).collect()
             }
         }
         pub fn group_by_common_vars(
-            mut search_results: Vec<&mut SearchMatches>,
-            common_vars: &HashMap<Var, usize>,
+            mut search_results: Vec<&mut SearchMatches>, 
+            common_vars: &HashMap<Var, usize>
         ) -> Vec<HashMap<Vec<Option<Id>>, Vec<Subst>>> {
             let mut by_vars: Vec<HashMap<Vec<Option<Id>>, Vec<Subst>>> = Vec::new();
             for matches in search_results.iter_mut() {
                 let cur_map: HashMap<Vec<Option<Id>>, Vec<Subst>> = {
                     let substs: Vec<Subst> = std::mem::replace(&mut matches.substs, Vec::new());
-                    let grouped = substs.into_iter().grouped(|s| {
-                        common_vars
-                            .keys()
-                            .map(|v| s.get(v.clone()).map(|i| i.clone()))
-                            .collect::<Vec<Option<Id>>>()
-                    });
+                    let grouped = substs
+                        .into_iter()
+                        .grouped(|s| common_vars.keys()
+                        .map(|v| s.get(v.clone()).map(|i| i.clone()))
+                        .collect::<Vec<Option<Id>>>());
                     grouped
                 };
                 by_vars.push(cur_map);
@@ -218,16 +197,8 @@ pub mod multisearcher {
         }
 
         impl EitherSearcher {
-            pub fn left(left: impl AsSearcher) -> Self {
-                EitherSearcher {
-                    node: Arc::new(Either::Left(left.as_searcher())),
-                }
-            }
-            pub fn right(right: impl AsSearcher) -> Self {
-                EitherSearcher {
-                    node: Arc::new(Either::Right(right.as_searcher())),
-                }
-            }
+            pub fn left(left: impl AsSearcher) -> Self { EitherSearcher { node: Arc::new(Either::Left(left.as_searcher())) } }
+            pub fn right(right: impl AsSearcher) -> Self { EitherSearcher { node: Arc::new(Either::Right(right.as_searcher())) } }
         }
         impl AsSearcher for EitherSearcher {
             fn as_searcher(self) -> Searcher {
@@ -292,22 +263,15 @@ pub mod multisearcher {
         }
         impl MultiEqSearcher {
             pub(crate) fn new(patterns: Vec<impl AsSearcher>) -> MultiEqSearcher {
-                let mut patterns: Vec<Searcher> =
-                    patterns.into_iter().map(|p| p.as_searcher()).collect();
+                let mut patterns: Vec<Searcher> = patterns.into_iter().map(|p| p.as_searcher()).collect();
                 let common_vars = Searcher::get_common_vars(&mut patterns);
-                MultiEqSearcher {
-                    patterns,
-                    common_vars,
-                }
+                MultiEqSearcher { patterns, common_vars }
             }
         }
         impl FromStr for MultiEqSearcher {
             type Err = String;
             fn from_str(s: &str) -> Result<Self, Self::Err> {
-                let patterns = s
-                    .split("|||")
-                    .map(|p| p.as_searcher())
-                    .collect::<Vec<Searcher>>();
+                let patterns = s.split("|||").map(|p| p.as_searcher()).collect::<Vec<Searcher>>();
                 if patterns.len() == 1 {
                     Err(String::from("Need at least two patterns"))
                 } else {
@@ -350,31 +314,15 @@ pub mod multisearcher {
                     ids = ids.into_iter().filter(|k| r.contains_key(k)).collect();
                 }
 
-                ids.iter()
-                    .filter_map(|k| {
-                        let eclass = *k;
-                        let mut inner_results = search_results
-                            .iter_mut()
-                            .map(|m| m.remove(k).unwrap())
-                            .collect::<Vec<SearchMatches>>();
-                        // Take all search results and foreach pattern find the common variables and split by them.
-                        let by_vars = Searcher::group_by_common_vars(
-                            inner_results.iter_mut().collect(),
-                            &self.common_vars,
-                        );
-                        let initial_limits = (0..self.common_vars.len()).map(|_| &None).collect();
-                        let res =
-                            Searcher::aggregate_substs(&by_vars[..], initial_limits, &self.vars());
-                        if res.is_empty() {
-                            None
-                        } else {
-                            Some(SearchMatches {
-                                substs: res,
-                                eclass,
-                            })
-                        }
-                    })
-                    .collect()
+                ids.iter().filter_map(|k| {
+                    let eclass = *k;
+                    let mut inner_results = search_results.iter_mut().map(|m| m.remove(k).unwrap()).collect::<Vec<SearchMatches>>();
+                    // Take all search results and foreach pattern find the common variables and split by them.
+                    let by_vars = Searcher::group_by_common_vars(inner_results.iter_mut().collect(), &self.common_vars);
+                    let initial_limits = (0..self.common_vars.len()).map(|_| &None).collect();
+                    let res = Searcher::aggregate_substs(&by_vars[..], initial_limits, &self.vars());
+                    if res.is_empty() { None } else { Some(SearchMatches { substs: res, eclass }) }
+                }).collect()
             }
         }
         impl HasVars for MultiEqSearcher {
@@ -394,11 +342,7 @@ pub mod multisearcher {
         }
         impl PrettyString for MultiEqSearcher {
             fn pretty_string(&self) -> String {
-                self.patterns
-                    .iter()
-                    .map(|p| p.pretty_string())
-                    .intersperse(" ||| ".to_string())
-                    .collect()
+                self.patterns.iter().map(|p| p.pretty_string()).intersperse(" ||| ".to_string()).collect()
             }
         }
     }
@@ -410,22 +354,15 @@ pub mod multisearcher {
         }
         impl MultiDiffSearcher {
             pub fn new(patterns: Vec<impl AsSearcher>) -> MultiDiffSearcher {
-                let mut patterns: Vec<Searcher> =
-                    patterns.into_iter().map(|p| p.as_searcher()).collect();
+                let mut patterns: Vec<Searcher> = patterns.into_iter().map(|p| p.as_searcher()).collect();
                 let common_vars = Searcher::get_common_vars(&mut patterns);
-                MultiDiffSearcher {
-                    patterns,
-                    common_vars,
-                }
+                MultiDiffSearcher { patterns, common_vars }
             }
         }
         impl FromStr for MultiDiffSearcher {
             type Err = String;
             fn from_str(s: &str) -> Result<Self, Self::Err> {
-                let patterns = s
-                    .split("||||")
-                    .map(|p| p.as_searcher())
-                    .collect::<Vec<Searcher>>();
+                let patterns = s.split("||||").map(|p| p.as_searcher()).collect::<Vec<Searcher>>();
                 if patterns.len() == 1 {
                     Err(String::from("Need at least two patterns"))
                 } else {
@@ -449,9 +386,7 @@ pub mod multisearcher {
         }
         impl HasSearch for MultiDiffSearcher {
             fn search<G: EGraphView>(&self, egraph: &G) -> Vec<SearchMatches> {
-                if self.patterns.len() == 1 {
-                    return self.patterns[0].search(egraph);
-                }
+                if self.patterns.len() == 1 { return self.patterns[0].search(egraph); }
 
                 // TODO: we dont need a hashmap here
                 let search_results = {
@@ -475,55 +410,29 @@ pub mod multisearcher {
                 let mut it = search_results.into_iter();
                 let first = it.next();
                 // I want to merge all subst except from first
-                let mut all_matches = it
-                    .map(|mut m| {
+                let mut all_matches = it.map(|mut m|
                         m.into_iter()
-                            .map(|x| x.1)
-                            .fold1(|mut s1, mut s2| {
-                                s1.substs.extend(s2.substs.into_iter());
-                                s1
-                            })
-                            .unwrap_or(SearchMatches {
-                                substs: Vec::new(),
-                                eclass: Id::default(),
-                            })
-                    })
+                        .map(|x| x.1)
+                        .fold1(|mut s1, mut s2| { s1.substs.extend(s2.substs.into_iter()); s1 })
+                        .unwrap_or(SearchMatches { substs: Vec::new(), eclass: Id::default() })
+                    )
                     .collect::<Vec<SearchMatches>>();
-                if all_matches.iter().any(|s| s.substs.is_empty()) {
-                    return Vec::new();
-                }
+                if all_matches.iter().any(|s| s.substs.is_empty()) { return Vec::new(); }
 
                 let mut all_combinations = Searcher::group_by_common_vars(
                     all_matches.iter_mut().collect(),
-                    &self.common_vars,
-                );
-                first
-                    .unwrap()
-                    .into_iter()
-                    .filter_map(|(k, mut matches)| {
-                        let eclass = k;
-                        let first_grouped =
-                            Searcher::group_by_common_vars(vec![&mut matches], &self.common_vars)
-                                .pop()
-                                .unwrap();
-                        all_combinations.push(first_grouped);
-                        let initial_limits = (0..self.common_vars.len()).map(|_| &None).collect();
-                        let res = Searcher::aggregate_substs(
-                            &all_combinations[..],
-                            initial_limits,
-                            &self.vars(),
-                        );
-                        all_combinations.pop();
-                        if res.is_empty() {
-                            None
-                        } else {
-                            Some(SearchMatches {
-                                substs: res,
-                                eclass,
-                            })
-                        }
-                    })
-                    .collect()
+                   &self.common_vars);
+                first.unwrap().into_iter().filter_map(|(k, mut matches)| {
+                    let eclass = k;
+                    let first_grouped = Searcher::group_by_common_vars(vec![&mut matches], &self.common_vars).pop().unwrap();
+                    all_combinations.push(first_grouped);
+                    let initial_limits = (0..self.common_vars.len()).map(|_| &None).collect();
+                    let res = Searcher::aggregate_substs(&all_combinations[..], initial_limits, &self.vars());
+                    all_combinations.pop();
+                    if res.is_empty() { None } else {
+                        Some(SearchMatches { substs: res, eclass })
+                    }
+                }).collect()
             }
         }
         impl HasVars for MultiDiffSearcher {
@@ -543,11 +452,7 @@ pub mod multisearcher {
         }
         impl PrettyString for MultiDiffSearcher {
             fn pretty_string(&self) -> String {
-                self.patterns
-                    .iter()
-                    .map(|p| p.pretty_string())
-                    .intersperse(" ||| ".to_string())
-                    .collect()
+                self.patterns.iter().map(|p| p.pretty_string()).intersperse(" ||| ".to_string()).collect()
             }
         }
     }
@@ -558,8 +463,7 @@ pub mod multisearcher {
 
         use super::*;
 
-        pub type Filter =
-            Arc<dyn Fn(&dyn Searchable, Vec<SearchMatches>) -> Vec<SearchMatches> + Send + Sync>;
+        pub type Filter = Arc<dyn Fn(&dyn Searchable, Vec<SearchMatches>) -> Vec<SearchMatches> + Send + Sync>;
 
         #[derive(Clone)]
         pub struct FilterSearcher {
@@ -569,40 +473,24 @@ pub mod multisearcher {
 
         impl FilterSearcher {
             pub fn new(searcher: impl AsSearcher, filter: Filter) -> Self {
-                FilterSearcher {
-                    searcher: Arc::new(searcher.as_searcher()),
-                    filter,
-                }
+                FilterSearcher { searcher: Arc::new(searcher.as_searcher()), filter }
             }
             pub fn combine_filters(fs: Vec<Filter>) -> Filter {
-                Arc::new(move |searchable, mut original| {
-                    for f in fs.iter() {
-                        original = f(searchable, original)
-                    }
+                Arc::new(move |searchable, mut original| { 
+                    for f in fs.iter() { original = f(searchable, original) }
                     original
                 })
             }
             pub fn exist_filter(searcher: impl AsSearcher, root: Var, existence: bool) -> Filter {
                 let searcher = searcher.as_searcher();
                 Arc::new(move |searchable, original| {
-                    let requirements = searchable
-                        .search(&searcher)
-                        .iter()
-                        .map(|s| s.eclass)
-                        .collect::<HashSet<Id>>();
+                    let requirements = searchable.search(&searcher).iter().map(|s| s.eclass).collect::<HashSet<Id>>();
                     original
                         .into_iter()
                         .filter_map(|mut sm| {
                             let substs = std::mem::take(&mut sm.substs);
-                            sm.substs = substs
-                                .into_iter()
-                                .filter(|s| requirements.contains(&s[root]) == existence)
-                                .collect_vec();
-                            if sm.substs.is_empty() {
-                                None
-                            } else {
-                                Some(sm)
-                            }
+                            sm.substs = substs.into_iter().filter(|s| requirements.contains(&s[root]) == existence).collect_vec();
+                            if sm.substs.is_empty() { None } else { Some(sm) }
                         })
                         .collect_vec()
                 })
@@ -651,13 +539,11 @@ pub mod multisearcher {
         use super::*;
         #[derive(Clone, Debug)]
         pub struct PointerSearcher {
-            searcher: Arc<Searcher>,
+            searcher: Arc<Searcher>
         }
         impl PointerSearcher {
             pub fn new(searcher: impl AsSearcher) -> Self {
-                PointerSearcher {
-                    searcher: Arc::new(searcher.as_searcher()),
-                }
+                PointerSearcher { searcher: Arc::new(searcher.as_searcher()) } 
             }
         }
         impl AsSearcher for PointerSearcher {
@@ -697,10 +583,7 @@ mod tests {
     use std::str::FromStr;
 
     use crate::egg::{RecExpr, SymbolLang};
-    use crate::{
-        adapter::{EGraph, EasterEgg, Veg, VegCloningBasic, VegCloningPersistent},
-        eggstentions::searchers::multisearcher::*,
-    };
+    use crate::{adapter::{EGraph, EasterEgg, Veg, VegCloningBasic, VegCloningPersistent}, eggstentions::searchers::multisearcher::*};
 
     fn eq_two_trees_one_common<G: EGraph>() {
         let searcher = multieq::MultiEqSearcher::from_str("(a ?b ?c) ||| (a ?c ?d)").unwrap();
@@ -738,8 +621,7 @@ mod tests {
         let ltwf = egraph.add_expr(&"(ltwf p0 (S p0))".parse().unwrap());
         egraph.union(full_pl, after_pl);
         egraph.rebuild();
-        let searcher =
-            multidiff::MultiDiffSearcher::from_str("(ltwf ?x ind_var) |||| (pl ?x Z)").unwrap();
+        let searcher = multidiff::MultiDiffSearcher::from_str("(ltwf ?x ind_var) |||| (pl ?x Z)").unwrap();
         assert!(!searcher.search(&egraph).is_empty());
     }
 
@@ -749,18 +631,9 @@ mod tests {
             mod $module {
                 use super::*;
                 type Impl = $implementation;
-                #[test]
-                fn eq_two_trees_one_common() {
-                    super::eq_two_trees_one_common::<Impl>()
-                }
-                #[test]
-                fn diff_two_trees_one_common() {
-                    super::diff_two_trees_one_common::<Impl>()
-                }
-                #[test]
-                fn find_ind_hyp() {
-                    super::find_ind_hyp::<Impl>()
-                }
+                #[test] fn eq_two_trees_one_common(){ super::eq_two_trees_one_common::<Impl>() }
+                #[test] fn diff_two_trees_one_common(){ super::diff_two_trees_one_common::<Impl>() }
+                #[test] fn find_ind_hyp(){ super::find_ind_hyp::<Impl>() }
             }
         };
     }
