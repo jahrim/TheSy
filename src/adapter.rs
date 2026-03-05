@@ -22,6 +22,7 @@ use std::{collections::HashMap, time::Duration};
 
 pub use common::*;
 
+/// Types that are common between all egraph implementations.
 pub mod common {
 
     use super::*;
@@ -114,6 +115,7 @@ pub mod common {
     }
 }
 
+/// A mock egraph implementation that can be used for testing and debugging.
 pub type NoOp = ();
 pub mod noop {
     use super::*;
@@ -183,6 +185,7 @@ pub mod noop {
     }
 }
 
+/// Easter Egg's implementation of conditional egraphs, i.e., colored egraphs.
 pub type EasterEgg = easteregg::VersionedEGraph;
 pub mod easteregg {
     use crate::eggstentions::searchers::multisearcher::AsSearcher;
@@ -972,6 +975,7 @@ pub mod easteregg {
     }
 }
 
+/// Our implementation of conditional egraphs, i.e., versioned egraphs.
 pub type Veg = veg::VersionedEGraph;
 pub mod veg {
     use super::*;
@@ -1619,10 +1623,12 @@ pub mod veg {
     }
 }
 
+/// Our implementation of conditional egraphs via cloning.
 pub type VegCloning<G> = vegcloning::VersionedEGraph<G>;
+/// Cloning based on traditional egraphs.
 pub type VegCloningBasic = VegCloning<crate::veg::structures::egraph::basic::EGraph<()>>;
+/// Cloning based on persistent egraphs.
 pub type VegCloningPersistent = VegCloning<crate::veg::structures::egraph::persistent::EGraph<()>>;
-
 pub mod vegcloning {
     use super::*;
     use crate::veg::structures::egraph::{EGraph as _, EGraphView as _};
