@@ -26,7 +26,7 @@ use itertools::{Either, Itertools};
 use serde_json;
 use structopt::StructOpt;
 
-use crate::adapter::{EGraph, EasterEgg, Egg, NoOp, Veg, VegCloningBasic, VegCloningPersistent};
+use crate::adapter::{EGraph, EasterEgg, NoOp, Veg, VegCloningBasic, VegCloningPersistent};
 use crate::eggstentions::pretty_string::PrettyString;
 use crate::eggstentions::rewrites::Rewrite;
 use crate::thesy::case_split::{CaseSplit, Split};
@@ -313,7 +313,6 @@ fn main() {
     ALLOCATOR.set_limit(args.max_memory * GB);
     match args.egraph_type.as_str() {
         "noop" => run_thesy::<NoOp>(&args),
-        "egg" => run_thesy::<Egg>(&args),
         "versioned" => run_thesy::<Veg>(&args),
         "cloning" => run_thesy::<VegCloningBasic>(&args),
         "persistent" => run_thesy::<VegCloningPersistent>(&args),
@@ -377,6 +376,10 @@ fn run_thesy<G: EGraph>(args: &CliOpt) {
         SystemTime::now().duration_since(start).unwrap().as_millis()
     );
     println!("Branches: {}", res.0.egraph.branch_count());
+    println!(
+        "Backtracking Steps: {}",
+        res.0.egraph.backtracking_steps().unwrap_or_default()
+    );
     if cfg!(feature = "stats") {
         export_json(&res.0, &args.path);
     }

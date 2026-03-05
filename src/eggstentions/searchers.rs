@@ -698,7 +698,7 @@ mod tests {
 
     use crate::egg::{RecExpr, SymbolLang};
     use crate::{
-        adapter::{EGraph, EasterEgg, Egg, Veg, VegCloningBasic, VegCloningPersistent},
+        adapter::{EGraph, EasterEgg, Veg, VegCloningBasic, VegCloningPersistent},
         eggstentions::searchers::multisearcher::*,
     };
 
@@ -765,7 +765,6 @@ mod tests {
         };
     }
 
-    test_impl!(egg, Egg);
     test_impl!(easter_egg, EasterEgg);
     test_impl!(veg, Veg);
     test_impl!(vegcloning, VegCloningBasic);

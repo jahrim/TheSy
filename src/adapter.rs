@@ -53,6 +53,9 @@ pub mod common {
         fn extractor(&self) -> impl Extractor<Self>;
         fn branch(&self) -> Branch;
         fn branch_count(&self) -> usize;
+        fn backtracking_steps(&self) -> Option<usize> {
+            None
+        }
     }
 
     pub trait EGraph: EGraphView {
@@ -172,406 +175,6 @@ pub mod noop {
     impl Extractor<()> for () {
         fn find_best(&mut self, _: Id) -> Option<(RepOrder, RecExpr<SymbolLang>)> {
             Default::default()
-        }
-    }
-}
-
-pub type Egg = egg::VersionedEGraph;
-pub mod egg {
-    use core::sync::atomic::AtomicUsize;
-
-    use super::*;
-    use crate::egg;
-
-    // NOTE these conversions do nothing except add some artificial computation to factor out
-    // conversion overhead during the evaluation. This overhead could be avoided entirely by
-    // rewriting TheSy to use the proper types directly.
-    //
-    // The most expensive conversions are for patterns and substitutions in `search_pattern` and
-    // `write_pattern`.
-    pub mod artificial_conversions {
-        use super::*;
-
-        #[allow(non_camel_case_types)]
-        pub struct pattern;
-        impl Conversion for pattern {
-            type Left = Pattern<SymbolLang>;
-            type Right = Pattern<SymbolLang>;
-            fn conversion(&self, source: &Self::Left) -> Self::Right {
-                use std::hint::black_box;
-                Pattern::<SymbolLang>::from_str(black_box(source).to_string().as_str()).unwrap()
-            }
-        }
-        impl BiConversion for pattern {
-            fn inverse_conversion(&self, source: &Self::Right) -> Self::Left {
-                self.conversion(source)
-            }
-        }
-
-        #[allow(non_camel_case_types)]
-        pub struct var;
-        impl Conversion for var {
-            type Left = Var;
-            type Right = Var;
-            fn conversion(&self, source: &Self::Left) -> Self::Right {
-                use std::hint::black_box;
-                black_box(source).to_string().as_str().parse().unwrap()
-            }
-        }
-        impl BiConversion for var {
-            fn inverse_conversion(&self, source: &Self::Right) -> Self::Left {
-                self.conversion(source)
-            }
-        }
-
-        #[allow(non_camel_case_types)]
-        pub struct subst;
-        impl Conversion for subst {
-            type Left = Subst;
-            type Right = Subst;
-            fn conversion(&self, source: &Self::Left) -> Self::Right {
-                let source = unsafe {
-                    std::mem::transmute::<&Subst, &smallvec::SmallVec<[(Var, Id); 3]>>(source)
-                };
-                let mut substs = Subst::with_capacity(source.capacity());
-                for (v, value) in source {
-                    substs.insert(artificial_conversions::var.c(&v), *value);
-                }
-                substs
-            }
-        }
-        impl BiConversion for subst {
-            fn inverse_conversion(&self, source: &Self::Right) -> Self::Left {
-                self.conversion(source)
-            }
-        }
-    }
-
-    impl crate::egg::Searcher<SymbolLang, ()> for Searcher {
-        fn search(&self, egraph: &egg::EGraph<SymbolLang, ()>) -> Vec<SearchMatches> {
-            HasSearch::search(self, egraph)
-        }
-        fn search_eclass(
-            &self,
-            egraph: &egg::EGraph<SymbolLang, ()>,
-            eclass: Id,
-        ) -> Option<SearchMatches> {
-            HasSearchEClass::search_eclass(self, egraph, eclass)
-        }
-        fn vars(&self) -> Vec<Var> {
-            HasVars::vars(self)
-        }
-    }
-    impl crate::egg::Applier<SymbolLang, ()> for Applier {
-        fn apply_matches(
-            &self,
-            egraph: &mut egg::EGraph<SymbolLang, ()>,
-            matches: &[SearchMatches],
-        ) -> Vec<Id> {
-            HasApplyMatches::apply_matches(self, egraph, matches)
-        }
-        fn apply_one(
-            &self,
-            egraph: &mut egg::EGraph<SymbolLang, ()>,
-            eclass: Id,
-            subst: &Subst,
-        ) -> Vec<Id> {
-            HasApplyOne::apply_one(self, egraph, eclass, subst)
-        }
-        fn vars(&self) -> Vec<Var> {
-            HasVars::vars(self)
-        }
-    }
-
-    pub mod conversions {
-        use super::*;
-
-        #[allow(non_camel_case_types)]
-        pub struct rw;
-        impl Conversion for rw {
-            type Left = Rewrite;
-            type Right = egg::Rewrite<egg::SymbolLang, ()>;
-            fn conversion(&self, source: &Self::Left) -> Self::Right {
-                egg::Rewrite::new(
-                    source.name(),
-                    source.searcher.clone(),
-                    source.applier.clone(),
-                )
-                .unwrap()
-            }
-        }
-    }
-
-    impl EGraphView for egg::EGraph<SymbolLang, ()> {
-        fn classes(&self) -> impl Iterator<Item = Id> + '_ {
-            egg::EGraph::classes(self).map(|xc| xc.id)
-        }
-        fn enodes(&self) -> HashMap<Id, Vec<SymbolLang>> {
-            egg::EGraph::classes(self)
-                .map(|xc| (xc.id, xc.nodes.clone()))
-                .collect()
-        }
-        fn total_number_of_nodes(&self) -> usize {
-            egg::EGraph::total_number_of_nodes(self)
-        }
-        fn lookup(&self, enode: &mut SymbolLang) -> Option<Id> {
-            egg::EGraph::lookup(self, enode)
-        }
-        fn find(&self, eclass: Id) -> Id {
-            egg::EGraph::find(self, eclass)
-        }
-
-        fn search_pattern(&self, searcher: &Pattern<SymbolLang>) -> Vec<SearchMatches> {
-            let searcher = &artificial_conversions::pattern.c(searcher);
-            egg::Searcher::search(searcher, self)
-        }
-
-        fn extractor(&self) -> impl Extractor<Self> {
-            egg::Extractor::new(self, MinRep)
-        }
-
-        fn branch(&self) -> Branch {
-            unimplemented!("cannot branch from traditional egraphs")
-        }
-        fn branch_count(&self) -> usize {
-            unimplemented!("cannot branch from traditional egraphs")
-        }
-    }
-    impl EGraph for egg::EGraph<SymbolLang, ()> {
-        fn add(&mut self, enode: SymbolLang) -> Id {
-            egg::EGraph::add(self, enode)
-        }
-        fn add_expr(&mut self, expr: &RecExpr<SymbolLang>) -> Id {
-            egg::EGraph::add_expr(self, expr)
-        }
-        fn union(&mut self, left: Id, right: Id) -> Id {
-            egg::EGraph::union(self, left, right).0
-        }
-        fn rebuild(&mut self) {
-            egg::EGraph::rebuild(self);
-        }
-        fn equivs(&mut self, left: &RecExpr<SymbolLang>, right: &RecExpr<SymbolLang>) -> Vec<Id> {
-            egg::EGraph::equivs(self, left, right)
-        }
-
-        fn write_pattern(
-            &mut self,
-            applier: &Pattern<SymbolLang>,
-            eclass: Id,
-            subst: &Subst,
-        ) -> Vec<Id> {
-            let applier = &artificial_conversions::pattern.c(applier);
-            let subst = &artificial_conversions::subst.c(subst);
-            egg::Applier::apply_one(applier, self, eclass, subst)
-        }
-        fn run(&mut self, config: &RunnerConfig, rules: &[Rewrite]) -> Option<StopReason> {
-            fn check_time(
-                result: &mut Result<(), StopReason>,
-                start_time: Instant,
-                config: &RunnerConfig,
-            ) {
-                if let Some(timeout) = config.timeout {
-                    let elapsed = start_time.elapsed();
-                    if elapsed > timeout {
-                        *result = Err(StopReason::TimeLimit(elapsed.as_secs_f64()));
-                    }
-                }
-            }
-            fn check_nodes(
-                result: &mut Result<(), StopReason>,
-                egraph: &egg::EGraph<egg::SymbolLang, ()>,
-                config: &RunnerConfig,
-            ) {
-                if let Some(node_limit) = config.node_limit {
-                    let size = egraph.total_number_of_nodes();
-                    if size > node_limit {
-                        *result = Err(StopReason::NodeLimit(size));
-                    }
-                }
-            }
-            fn check_iters(
-                result: &mut Result<(), StopReason>,
-                iterations: usize,
-                config: &RunnerConfig,
-            ) {
-                if let Some(iter_limit) = config.iter_limit {
-                    if iterations > iter_limit {
-                        *result = Err(StopReason::IterationLimit(iterations));
-                    }
-                }
-            }
-
-            let rules = rules.iter().collect::<Vec<_>>();
-            let mut iterations: usize = 0;
-            let mut result: Result<(), StopReason> = Ok(());
-            let start_time: Instant = Instant::now();
-            loop {
-                self.rebuild();
-                if result.is_ok() {
-                    check_time(&mut result, start_time, config);
-                    check_nodes(&mut result, &self, config);
-                    check_iters(&mut result, iterations, config);
-                }
-                if let Err(stop_reason) = result {
-                    return Some(stop_reason);
-                }
-
-                let mut matches: Vec<Vec<SearchMatches>> = Vec::new();
-                for rule in rules.iter() {
-                    matches.push(rule.searcher.search(self));
-                    check_time(&mut result, start_time, config);
-                    if let Err(timeout) = result {
-                        return Some(timeout);
-                    }
-                }
-
-                let mut applications: HashMap<&String, usize> = HashMap::new();
-                for (rule, matched) in rules.iter().zip(matches) {
-                    let new_applications = rule.applier.apply_matches(self, &matched).len();
-                    if new_applications > 0 {
-                        *applications.entry(rule.name()).or_default() += new_applications;
-                    }
-                    check_time(&mut result, start_time, config);
-                    if let Err(timeout) = result {
-                        return Some(timeout);
-                    }
-                }
-
-                if applications.is_empty() {
-                    result = Err(StopReason::Saturated)
-                }
-                iterations += 1;
-            }
-        }
-        // NOTE below is saturation with egg's BackoffScheduler, reducing the number of rewrites
-        // applied. We use the one above, because we currently do not support rewrite scheduling.
-        // -----------------------------------------------------------------------------------------
-        // fn run(&mut self, config: &RunnerConfig, rules: &[Rewrite]) -> Option<StopReason> {
-        //     let mut runner = egg::Runner::default().with_egraph(std::mem::take(self));
-        //     if let Some(timeout) = config.timeout {
-        //         runner = runner.with_time_limit(timeout)
-        //     }
-        //     if let Some(node_limit) = config.node_limit {
-        //         runner = runner.with_node_limit(node_limit)
-        //     }
-        //     if let Some(iter_limit) = config.iter_limit {
-        //         runner = runner.with_iter_limit(iter_limit)
-        //     }
-        //     runner = runner.run(
-        //         &rules
-        //             .iter()
-        //             .map(|r| conversions::rw.c(r))
-        //             .collect::<Vec<_>>(),
-        //     );
-        //     runner.egraph.rebuild();
-        //     *self = runner.egraph;
-        //     runner.stop_reason
-        // }
-
-        fn branchout(&mut self) -> Branch {
-            unimplemented!("cannot branch from traditional egraphs")
-        }
-        fn checkout(&mut self, _: Branch) {
-            unimplemented!("cannot branch from traditional egraphs")
-        }
-    }
-    impl Extractor<egg::EGraph<SymbolLang, ()>> for egg::Extractor<'_, MinRep, SymbolLang, ()> {
-        fn find_best(&mut self, eclass: Id) -> Option<(RepOrder, RecExpr<SymbolLang>)> {
-            Some(egg::Extractor::find_best(self, eclass))
-        }
-    }
-
-    #[derive(Debug)]
-    pub struct VersionedEGraph {
-        branches: Vec<egg::EGraph<SymbolLang, ()>>,
-        checkout: Branch,
-    }
-    impl Default for VersionedEGraph {
-        fn default() -> Self {
-            let mut egraph = VersionedEGraph {
-                branches: vec![Default::default()],
-                checkout: Branch { id: 0 },
-            };
-            egraph.checkout(egraph.checkout);
-            egraph
-        }
-    }
-    impl EGraphView for VersionedEGraph {
-        fn classes(&self) -> impl Iterator<Item = Id> + '_ {
-            EGraphView::classes(&self.branches[self.checkout.id])
-        }
-        fn enodes(&self) -> HashMap<Id, Vec<SymbolLang>> {
-            EGraphView::enodes(&self.branches[self.checkout.id])
-        }
-        fn total_number_of_nodes(&self) -> usize {
-            EGraphView::total_number_of_nodes(&self.branches[self.checkout.id])
-        }
-        fn lookup(&self, enode: &mut SymbolLang) -> Option<Id> {
-            EGraphView::lookup(&self.branches[self.checkout.id], enode)
-        }
-        fn find(&self, eclass: Id) -> Id {
-            EGraphView::find(&self.branches[self.checkout.id], eclass)
-        }
-
-        fn search_pattern(&self, searcher: &Pattern<SymbolLang>) -> Vec<SearchMatches> {
-            EGraphView::search_pattern(&self.branches[self.checkout.id], searcher)
-        }
-
-        fn extractor(&self) -> impl Extractor<Self> {
-            egg::Extractor::new(&self.branches[self.checkout.id], MinRep)
-        }
-
-        fn branch(&self) -> Branch {
-            self.checkout
-        }
-        fn branch_count(&self) -> usize {
-            self.branches.len()
-        }
-    }
-    impl EGraph for VersionedEGraph {
-        fn add(&mut self, enode: SymbolLang) -> Id {
-            EGraph::add(&mut self.branches[self.checkout.id], enode)
-        }
-        fn add_expr(&mut self, expr: &RecExpr<SymbolLang>) -> Id {
-            EGraph::add_expr(&mut self.branches[self.checkout.id], expr)
-        }
-        fn union(&mut self, left: Id, right: Id) -> Id {
-            EGraph::union(&mut self.branches[self.checkout.id], left, right)
-        }
-        fn rebuild(&mut self) {
-            EGraph::rebuild(&mut self.branches[self.checkout.id]);
-        }
-        fn equivs(&mut self, left: &RecExpr<SymbolLang>, right: &RecExpr<SymbolLang>) -> Vec<Id> {
-            EGraph::equivs(&mut self.branches[self.checkout.id], left, right)
-        }
-
-        fn write_pattern(
-            &mut self,
-            applier: &Pattern<SymbolLang>,
-            eclass: Id,
-            subst: &Subst,
-        ) -> Vec<Id> {
-            EGraph::write_pattern(&mut self.branches[self.checkout.id], applier, eclass, subst)
-        }
-        fn run(&mut self, config: &RunnerConfig, rules: &[Rewrite]) -> Option<StopReason> {
-            EGraph::run(&mut self.branches[self.checkout.id], config, rules)
-        }
-
-        fn branchout(&mut self) -> Branch {
-            let current = &self.branches[self.checkout.id];
-            self.branches.push(current.clone());
-            Branch {
-                id: self.branches.len() - 1,
-            }
-        }
-        fn checkout(&mut self, branch: Branch) {
-            self.checkout = branch
-        }
-    }
-
-    impl Extractor<Egg> for egg::Extractor<'_, MinRep, SymbolLang, ()> {
-        fn find_best(&mut self, eclass: Id) -> Option<(RepOrder, RecExpr<SymbolLang>)> {
-            Some(egg::Extractor::find_best(self, eclass))
         }
     }
 }
@@ -1636,6 +1239,8 @@ pub mod veg {
         egraph: ext::versioned::basic::VersionedEGraph<()>,
         branches: Vec<ext::Version>,
         checkout: Branch,
+        last_modified: Option<Branch>,
+        backtracking_steps: usize,
     }
     impl Default for VersionedEGraph {
         fn default() -> Self {
@@ -1643,6 +1248,8 @@ pub mod veg {
                 egraph: ext::versioned::basic::VersionedEGraph::<()>::with_ematching_caches(10),
                 branches: vec![ext::VersionTree::ROOT_VERSION],
                 checkout: Branch { id: 0 },
+                last_modified: None,
+                backtracking_steps: 0,
             };
             veg.egraph.flags_mut().lock_superversions = false;
             veg.egraph.flags_mut().propagate = true;
@@ -1655,8 +1262,29 @@ pub mod veg {
         fn version(&self) -> ext::Version {
             self.branches[self.checkout.id]
         }
+        fn proj_mut(
+            &mut self,
+        ) -> ext::versioned::basic::Projection<(), &mut ext::versioned::basic::VersionedEGraph<()>>
+        {
+            if let Some(last_modified) = self.last_modified {
+                if self
+                    .egraph
+                    .versioning()
+                    .ancestors(last_modified.id)
+                    .any(|v| v == self.version())
+                {
+                    self.backtracking_steps += 1;
+                }
+            }
+            self.last_modified = Some(self.checkout);
+            self.egraph.take(self.version())
+        }
     }
+
     impl EGraphView for VersionedEGraph {
+        fn backtracking_steps(&self) -> Option<usize> {
+            Some(self.backtracking_steps)
+        }
         fn classes(&self) -> impl Iterator<Item = Id> {
             // TODO Avoid cloning: for now cloning is required because of
             // borrow-checking problems with projections
@@ -1738,15 +1366,12 @@ pub mod veg {
     }
     impl EGraph for VersionedEGraph {
         fn add(&mut self, xn: SymbolLang) -> Id {
-            let xc: ext::EClass = self
-                .egraph
-                .take(self.version())
-                .add(conversions::enode.c(&xn));
+            let xc: ext::EClass = self.proj_mut().add(conversions::enode.c(&xn));
             conversions::id.ic(&xc)
         }
         fn add_expr(&mut self, recx: &RecExpr<SymbolLang>) -> Id {
             let mut cs: Vec<ext::EClass> = vec![];
-            let mut proj = self.egraph.take(self.version());
+            let mut proj = self.proj_mut();
             for xn in conversions::recexpr::<SymbolLang>::new().c(recx) {
                 cs.push(
                     proj.add(ext::ENode::application(
@@ -1762,12 +1387,11 @@ pub mod veg {
         }
         fn union(&mut self, x: Id, y: Id) -> Id {
             conversions::id.ic(&self
-                .egraph
-                .take(self.version())
+                .proj_mut()
                 .union(conversions::id.c(&x), conversions::id.c(&y)))
         }
         fn rebuild(&mut self) {
-            self.egraph.take(self.version()).rebuild()
+            self.proj_mut().rebuild()
         }
         fn equivs(&mut self, recx: &RecExpr<SymbolLang>, recy: &RecExpr<SymbolLang>) -> Vec<Id> {
             fn lookup_expr<G: ext::EGraph>(
@@ -1791,7 +1415,7 @@ pub mod veg {
                 }
                 cs.last().cloned()
             }
-            let mut proj = self.egraph.take(self.version());
+            let mut proj = self.proj_mut();
             let xc = lookup_expr(&mut proj, recx);
             let yc = lookup_expr(&mut proj, recy);
             xc.filter(|xc| yc.is_some_and(|yc| *xc == yc))
@@ -1808,15 +1432,11 @@ pub mod veg {
             let applier = conversions::mpattern.c(applier);
             let eclass = conversions::id.c(&eclass);
             let subst = conversions::msubst.c(subst);
-            let mut result = ext::machine::CanBind::bind(
-                &applier,
-                &mut self.egraph.take(self.version()),
-                eclass,
-                &subst,
-            )
-            .into_iter()
-            .map(|c| conversions::id.ic(&c))
-            .collect::<Vec<_>>();
+            let mut result =
+                ext::machine::CanBind::bind(&applier, &mut self.proj_mut(), eclass, &subst)
+                    .into_iter()
+                    .map(|c| conversions::id.ic(&c))
+                    .collect::<Vec<_>>();
             if result.is_empty() {
                 result.push(conversions::id.ic(&eclass));
             }
@@ -1868,7 +1488,7 @@ pub mod veg {
 
                 if result.is_ok() {
                     check_time(&mut result, start_time, config);
-                    check_nodes(&mut result, &self.egraph.take(self.version()), config);
+                    check_nodes(&mut result, &self.egraph.focus(self.version()), config);
                     check_iters(&mut result, iterations, config);
                 }
                 if let Err(stop_reason) = result {
