@@ -27,6 +27,7 @@ pub mod common {
 
     use super::*;
 
+    /// A configuration for running equality saturation.
     #[derive(Default)]
     pub struct RunnerConfig {
         pub timeout: Option<Duration>,
@@ -34,58 +35,70 @@ pub mod common {
         pub iter_limit: Option<usize>,
     }
 
+    /// A branch in a conditional egraph.
     #[derive(Debug, Clone, Copy, Default)]
-    pub struct Branch {
-        pub id: usize,
-    }
+    pub struct Branch { pub id: usize }
 
-    pub trait Searchable {
-        fn search(&self, searcher: &Searcher) -> Vec<SearchMatches>;
-    }
-    pub trait Writable {
-        fn write(&mut self, applier: &Applier, eclass: Id, subst: &Subst) -> Vec<Id>;
-    }
-
+    /// An immutable view of a conditional egraph.
     pub trait EGraphView: Default + Sized + Debug {
+        /// An iterator over the eclasses in the egraph.
         fn classes(&self) -> impl Iterator<Item = Id> + '_;
+        /// A mapping from eclass ids to the enode members of that eclass.
         fn enodes(&self) -> HashMap<Id, Vec<SymbolLang>>;
+        /// The total number of enodes in the egraph.
         fn total_number_of_nodes(&self) -> usize;
+        /// Lookup an enode in the egraph and return its eclass id if it exists.
         fn lookup(&self, enode: &mut SymbolLang) -> Option<Id>;
+        /// Find the canonical eclass id for a given eclass id.
         fn find(&self, eclass: Id) -> Id;
-
+        /// Search the egraph for matches of a pattern and return the search matches.
         fn search_pattern(&self, searcher: &Pattern<SymbolLang>) -> Vec<SearchMatches>;
-
+        /// Get an extractor for this egraph, which can be used to run extraction queries.
         fn extractor(&self) -> impl Extractor<Self>;
+        /// Get the current branch of the egraph.
         fn branch(&self) -> Branch;
+        /// Get the total number of branches that have been created in the egraph.
         fn branch_count(&self) -> usize;
-        fn backtracking_steps(&self) -> Option<usize> {
-            None
-        }
+        /// Get the total number of backtracking steps that have been taken in the egraph, if supported (WIP).
+        fn backtracking_steps(&self) -> Option<usize> { None }
     }
 
+    /// A mutable conditional egraph.
     pub trait EGraph: EGraphView {
+        /// Add an enode to the egraph and return its eclass id.
         fn add(&mut self, enode: SymbolLang) -> Id;
+        /// Add a recursive expression to the egraph and return its eclass id.
         fn add_expr(&mut self, expr: &RecExpr<SymbolLang>) -> Id;
+        /// Union two eclasses in the egraph and return the new canonical eclass id.
         fn union(&mut self, left: Id, right: Id) -> Id;
+        /// Restore congruence invariants in the egraph.
         fn rebuild(&mut self);
+        /// Check if two recursive expressions are equivalent in the egraph and return the eclass ids that witness this equivalence.
         fn equivs(&mut self, left: &RecExpr<SymbolLang>, right: &RecExpr<SymbolLang>) -> Vec<Id>;
-
-        fn write_pattern(
-            &mut self,
-            applier: &Pattern<SymbolLang>,
-            eclass: Id,
-            subst: &Subst,
-        ) -> Vec<Id>;
+        /// Write a pattern into the egraph at a given eclass id with a given substitution, and return the new eclass ids that were added.
+        fn write_pattern(&mut self, applier: &Pattern<SymbolLang>, eclass: Id, subst: &Subst) -> Vec<Id>;
+        /// Run equality saturation with the given configuration and rewrite rules, and return the reason for stopping.
         fn run(&mut self, config: &RunnerConfig, rules: &[Rewrite]) -> Option<StopReason>;
-
+        /// Create a new branch in the egraph and return it.
         fn branchout(&mut self) -> Branch;
+        /// Checkout a branch in the egraph, making it the current branch for subsequent operations.
         fn checkout(&mut self, branch: Branch);
     }
 
+    /// All egraphs are searchable by the semantics of the specific searcher.
+    /// This is for matching the lhs during equality saturation.
+    pub trait Searchable {
+        fn search(&self, searcher: &Searcher) -> Vec<SearchMatches>;
+    }
     impl<G: EGraphView> Searchable for G {
         fn search(&self, searcher: &Searcher) -> Vec<SearchMatches> {
             searcher.search(self)
         }
+    }
+    /// All egraphs are writable by the semantics of the specific applier.
+    /// This is for instantiating the rhs during equality saturation.
+    pub trait Writable {
+        fn write(&mut self, applier: &Applier, eclass: Id, subst: &Subst) -> Vec<Id>;
     }
     impl<G: EGraph> Writable for G {
         fn write(&mut self, applier: &Applier, eclass: Id, subst: &Subst) -> Vec<Id> {
@@ -93,25 +106,24 @@ pub mod common {
         }
     }
 
+    /// An extractor implementing one extraction algorithm for an egraph implementation.
     pub trait Extractor<G: EGraphView> {
         fn find_best(&mut self, eclass: Id) -> Option<(RepOrder, RecExpr<SymbolLang>)>;
     }
 
+
+    /// Type conversion. A lot of type conversions are needed, e.g., because
+    /// many libraries use types from different versions of `egg`.
     pub trait Conversion {
         type Left;
         type Right;
         fn conversion(&self, source: &Self::Left) -> Self::Right;
-        #[inline(always)]
-        fn c(&self, source: &Self::Left) -> Self::Right {
-            self.conversion(source)
-        }
+        #[inline(always)] fn c(&self, source: &Self::Left) -> Self::Right { self.conversion(source) }
     }
+    /// Invertible type conversion.
     pub trait BiConversion: Conversion {
         fn inverse_conversion(&self, source: &Self::Right) -> Self::Left;
-        #[inline(always)]
-        fn ic(&self, source: &Self::Right) -> Self::Left {
-            self.inverse_conversion(source)
-        }
+        #[inline(always)] fn ic(&self, source: &Self::Right) -> Self::Left { self.inverse_conversion(source) }
     }
 }
 
