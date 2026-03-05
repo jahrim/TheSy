@@ -1,0 +1,10 @@
+*.res.th
+*.log
+*.fls
+*.synctex.gz
+*.out
+*.pdf
+*.fdb_latexmk
+*.aux 
+
+!results/latex/paper-results.pdf

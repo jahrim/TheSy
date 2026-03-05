@@ -1,2 +1,0 @@
-(=> "(rev (rev (append ?ts_ph_Lst_2 ?ts_ph_Lst_0))) => (append (rev (rev ?ts_ph_Lst_2)) (rev (rev ?ts_ph_Lst_0)))" (rev (rev (append ?ts_ph_Lst_2 ?ts_ph_Lst_0))) (append (rev (rev ?ts_ph_Lst_2)) (rev (rev ?ts_ph_Lst_0))))
-(=> "(append (rev (rev ?ts_ph_Lst_2)) (rev (rev ?ts_ph_Lst_0))) => (rev (rev (append ?ts_ph_Lst_2 ?ts_ph_Lst_0)))" (append (rev (rev ?ts_ph_Lst_2)) (rev (rev ?ts_ph_Lst_0))) (rev (rev (append ?ts_ph_Lst_2 ?ts_ph_Lst_0))))

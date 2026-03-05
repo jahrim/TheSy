@@ -1,9 +1,0 @@
-12:09:05 [WARN] Collecting statistics
-12:09:05 [WARN]  ex is: nil
-12:09:05 [WARN]  ex is: (cons autovar_sk_0 nil)
-12:09:05 [WARN]  ex is: (cons autovar_sk_1 (cons autovar_sk_0 nil))
-12:09:05 [WARN] Proof mode: false
-12:09:05 [WARN]  ex is: nil
-12:09:05 [WARN]  ex is: (cons autovar_sk_0 nil)
-12:09:05 [WARN]  ex is: (cons autovar_sk_1 (cons autovar_sk_0 nil))
-12:09:05 [WARN] Proof mode: false
