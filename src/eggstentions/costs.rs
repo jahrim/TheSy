@@ -11,6 +11,10 @@ pub struct RepOrder {
 }
 
 impl RepOrder {
+    pub fn get_depth(&self) -> usize {
+        self.depth
+    }
+
     fn count_ph1(it: &Vec<String>) -> usize {
         it.iter().filter(|x| x.ends_with("1")).count()
     }

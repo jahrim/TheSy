@@ -1,8 +1,8 @@
 use crate::egg::Var;
-use crate::{adapter::EGraph, eggstentions::appliers};
 use crate::eggstentions::searchers::multisearcher::*;
 use crate::eggstentions::appliers::*;
 use crate::eggstentions::rewrites::{rewrite, Rewrite};
+use crate::{adapter::EGraph, eggstentions::appliers};
 use std::str::FromStr;
 use crate::thesy::case_split::{CaseSplit, Split, SplitApplier};
 use itertools::Itertools;
@@ -51,45 +51,12 @@ fn cons_conclusion() -> diff::DiffApplier {
 
 pub(crate) fn is_rws() -> Vec<Rewrite> {
     vec![
-        rewrite!("is_cons_true"; 
-            {filter::FilterSearcher::new(
-                "(is-cons ?x)",
-                filter::FilterSearcher::exist_filter("(cons ?y)", Var::from_str("?x").unwrap(), true)
-            )}
-            => "true"
-        ),
-        rewrite!("is_cons_false"; 
-            {filter::FilterSearcher::new(
-                "(is-cons ?x)", 
-                filter::FilterSearcher::exist_filter("nil", Var::from_str("?x").unwrap(), true)
-            )} 
-            => "false"
-        ),
-        rewrite!("is_cons_conclusion"; 
-            {cons_conc_searcher()} 
-            => {cons_conclusion()}
-        ),
-        rewrite!("is_succ_true"; 
-            {filter::FilterSearcher::new(
-                "(is-succ ?x)", 
-                filter::FilterSearcher::exist_filter("(succ ?y)", Var::from_str("?x").unwrap(), true)
-            )} 
-            => "true"
-        ),
-        rewrite!("is_succ_false"; 
-            {filter::FilterSearcher::new(
-                "(is-succ ?x)", 
-                filter::FilterSearcher::exist_filter("zero", Var::from_str("?x").unwrap(), true)
-            )}
-            => "false"
-        ),
-        rewrite!("is_ESC_true"; 
-            {filter::FilterSearcher::new(
-                "(is-ESC ?x)", 
-                filter::FilterSearcher::exist_filter("ESC", "?x".parse().unwrap(), true)
-            )} 
-            => "true"
-        ),
+        rewrite!("is_cons_true"; {filter::FilterSearcher::new("(is-cons ?x)", filter::FilterSearcher::exist_filter("(cons ?y)", Var::from_str("?x").unwrap(), true))} => "true"),
+        rewrite!("is_cons_false"; {filter::FilterSearcher::new("(is-cons ?x)", filter::FilterSearcher::exist_filter("nil", Var::from_str("?x").unwrap(), true))}  => "false"),
+        rewrite!("is_cons_conclusion"; {cons_conc_searcher()} => {cons_conclusion()}),
+        rewrite!("is_succ_true"; {filter::FilterSearcher::new("(is-succ ?x)", filter::FilterSearcher::exist_filter("(succ ?y)", Var::from_str("?x").unwrap(), true))} => "true"),
+        rewrite!("is_succ_false"; {filter::FilterSearcher::new("(is-succ ?x)", filter::FilterSearcher::exist_filter("zero", Var::from_str("?x").unwrap(), true))} => "false"),
+        rewrite!("is_ESC_true"; {filter::FilterSearcher::new("(is-ESC ?x)", filter::FilterSearcher::exist_filter("ESC", "?x".parse().unwrap(), true))} => "true"),
     ]
 }
 

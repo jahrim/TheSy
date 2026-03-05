@@ -1,9 +1,7 @@
-use std::fmt::Display;
-
-use crate::eggstentions::{pretty_string::PrettyString};
 use egg::{Id, SearchMatches, Subst, SymbolLang, Var};
+use std::fmt::Display;
+use crate::eggstentions::{pretty_string::PrettyString};
 use itertools::Itertools;
-
 use crate::{adapter::EGraph, eggstentions::searchers::multisearcher::HasVars};
 
 pub trait AsApplier {
@@ -61,16 +59,12 @@ pub mod pattern {
 
     impl AsApplier for &str {
         fn as_applier(self) -> Applier {
-            self.parse::<egg::Pattern<SymbolLang>>()
-                .unwrap()
-                .as_applier()
+            self.parse::<egg::Pattern<SymbolLang>>().unwrap().as_applier()
         }
     }
     impl AsApplier for String {
         fn as_applier(self) -> Applier {
-            self.parse::<egg::Pattern<SymbolLang>>()
-                .unwrap()
-                .as_applier()
+            self.parse::<egg::Pattern<SymbolLang>>().unwrap().as_applier()
         }
     }
     impl AsApplier for egg::Pattern<SymbolLang> {

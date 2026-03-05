@@ -1,16 +1,16 @@
+use egg::{Applier, EClass, Id, Pattern, SearchMatches, StopReason, SymbolLang, Var};
+use itertools::Itertools;
+use std::time::Duration;
+use std::collections::{HashMap, HashSet};
+use std::str::FromStr;
+use smallvec::alloc::fmt::Formatter;
+use std::collections::hash_map::RandomState;
+use std::rc::Rc;
+use std::fmt;
+use std::path::Display;
 use crate::adapter::{Branch, EGraph, RunnerConfig};
 use crate::eggstentions::rewrites::Rewrite;
 use crate::eggstentions::searchers::multisearcher::{HasSearch, Searcher};
-use egg::{Applier, EClass, Id, Pattern, SearchMatches, StopReason, SymbolLang, Var};
-use itertools::Itertools;
-use smallvec::alloc::fmt::Formatter;
-use std::collections::hash_map::RandomState;
-use std::collections::{HashMap, HashSet};
-use std::fmt;
-use std::path::Display;
-use std::rc::Rc;
-use std::str::FromStr;
-use std::time::Duration;
 
 /// To be used as the op of edges representing potential split
 pub const SPLITTER: &'static str = "potential_split";
@@ -33,9 +33,7 @@ pub struct Split {
 }
 
 impl Split {
-    pub fn new(root: Id, splits: Vec<Id>) -> Self {
-        Split { root, splits }
-    }
+    pub fn new(root: Id, splits: Vec<Id>) -> Self {Split{root,splits}}
 
     pub(crate) fn update<G: EGraph>(&mut self, egraph: &G) {
         self.root = egraph.find(self.root);
@@ -47,16 +45,7 @@ impl Split {
 
 impl fmt::Display for Split {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "(root: {}, splits [{}])",
-            self.root,
-            self.splits
-                .iter()
-                .map(|x| usize::from(*x).to_string())
-                .intersperse(" ".parse().unwrap())
-                .collect::<String>()
-        )
+        write!(f, "(root: {}, splits [{}])", self.root, self.splits.iter().map(|x| usize::from(*x).to_string()).intersperse(" ".parse().unwrap()).collect::<String>())
     }
 }
 
@@ -74,32 +63,19 @@ impl<G: EGraph> CaseSplit<G> {
     pub fn from_applier_patterns(
         case_splitters: Vec<(Searcher, Var, Vec<Pattern<SymbolLang>>)>,
     ) -> CaseSplit<G> {
-        let res = CaseSplit::new(
-            case_splitters
-                .into_iter()
-                .map(|(searcher, root, split_evaluators)| {
-                    let applier: SplitApplier<G> =
-                        Box::new(move |egraph: &mut G, sms: Vec<SearchMatches>| {
-                            let mut res = vec![];
-                            for sm in sms {
-                                for subst in &sm.substs {
-                                    res.push(Split::new(
-                                        subst[root],
-                                        split_evaluators
-                                            .iter()
-                                            .map(|ev| {
-                                                egraph.write_pattern(ev, sm.eclass, &subst)[0]
-                                            })
-                                            .collect_vec(),
-                                    ));
-                                }
-                            }
-                            res
-                        });
-                    (searcher.clone(), applier)
-                })
-                .collect_vec(),
-        );
+        let res = CaseSplit::new(case_splitters.into_iter().map(|(searcher, root, split_evaluators)| {
+            let applier: SplitApplier<G> = Box::new(move |egraph: &mut G, sms: Vec<SearchMatches>| {
+                let mut res = vec![];
+                for sm in sms {
+                    for subst in &sm.substs {
+                        res.push(Split::new(subst[root], split_evaluators.iter().map(|ev| { egraph.write_pattern(ev, sm.eclass, &subst)[0] }).collect_vec()));
+                    }
+                }
+                res
+            });
+            (searcher.clone(), 
+            applier)
+        }).collect_vec());
         res
     }
 
@@ -120,20 +96,12 @@ impl<G: EGraph> CaseSplit<G> {
     // }
 
     fn equiv_reduction(rules: &[Rewrite], egraph: &mut G, run_depth: usize) {
-        let config = RunnerConfig {
-            timeout: Some(Duration::from_secs(60 * 10)),
-            node_limit: Some(egraph.total_number_of_nodes() + 200000),
-            iter_limit: Some(run_depth),
-        };
+        let config = RunnerConfig { timeout: Some(Duration::from_secs(60 * 10)), node_limit: Some(egraph.total_number_of_nodes() + 200000), iter_limit: Some(run_depth) };
         match egraph.run(&config, rules).as_ref().unwrap() {
             StopReason::Saturated => {}
             StopReason::IterationLimit(_) => {}
-            StopReason::NodeLimit(_) => {
-                warn!("Stopped case split due to node limit")
-            }
-            StopReason::TimeLimit(_) => {
-                warn!("Stopped case split due to time limit")
-            }
+            StopReason::NodeLimit(_) => { warn!("Stopped case split due to node limit") }
+            StopReason::TimeLimit(_) => { warn!("Stopped case split due to time limit") }
             StopReason::Other(_) => {}
         };
     }
@@ -149,11 +117,7 @@ impl<G: EGraph> CaseSplit<G> {
         f
     }
 
-    fn merge_conclusions(
-        egraph: &mut G,
-        classes: &Vec<Id>,
-        split_conclusions: Vec<HashMap<Id, Id>>,
-    ) {
+    fn merge_conclusions(egraph: &mut G, classes: &Vec<Id>, split_conclusions: Vec<HashMap<Id, Id>>) {
         let mut group_by_splits: HashMap<Vec<Id>, HashSet<Id>> = HashMap::new();
         for c in classes {
             let key = split_conclusions.iter().map(|m| m[c]).collect_vec();
@@ -171,44 +135,25 @@ impl<G: EGraph> CaseSplit<G> {
         egraph.rebuild();
     }
     fn collect_merged(egraph: &G, classes: &Vec<Id>) -> HashMap<Id, Id> {
-        classes
-            .iter()
-            .map(|c| (*c, egraph.find(*c)))
-            .collect::<HashMap<Id, Id>>()
+        classes.iter().map(|c| (*c, egraph.find(*c))).collect::<HashMap<Id, Id>>()
     }
 
-    pub fn case_split(
-        &mut self,
-        egraph: &mut G,
-        split_depth: usize,
-        rules: &[Rewrite],
-        run_depth: usize,
-    ) {
+    pub fn case_split(&mut self, egraph: &mut G, split_depth: usize, rules: &[Rewrite], run_depth: usize) {
         if !cfg!(feature = "no_split") {
             self.inner_case_split(egraph, split_depth, &Default::default(), rules, run_depth)
         }
     }
 
-    fn inner_case_split(
-        &mut self,
-        egraph: &mut G,
-        split_depth: usize,
-        known_splits: &HashSet<Split>,
-        rules: &[Rewrite],
-        run_depth: usize,
-    ) {
+    fn inner_case_split(&mut self, egraph: &mut G, split_depth: usize, known_splits: &HashSet<Split>, rules: &[Rewrite], run_depth: usize) {
         if split_depth == 0 {
             return;
         }
 
-        let known_splits: HashSet<Split, RandomState> = known_splits
-            .iter()
-            .map(|e| {
+        let known_splits: HashSet<Split, RandomState> = known_splits.iter().map(|e| {
                 let mut res = e.clone();
                 res.update(egraph);
                 res
-            })
-            .collect();
+                }).collect();
 
         let temp = self.find_splitters(egraph);
         let splitters: Vec<&Split> = temp.iter().filter(|s| !known_splits.contains(s)).collect();

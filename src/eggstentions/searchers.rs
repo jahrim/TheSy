@@ -5,13 +5,13 @@ pub mod multisearcher {
     use std::str::FromStr;
 
     use egg::{Id, Language, SearchMatches, Subst, SymbolLang, Var};
-    use itertools::{Either, Itertools};
+    use itertools::{Itertools, Either};
 
+    use crate::tools::tools::Grouped;
     use crate::adapter::{EGraph, EGraphView};
     use crate::eggstentions::pretty_string::PrettyString;
-    use crate::tools::tools::Grouped;
-    use smallvec::alloc::fmt::Formatter;
     use std::fmt::{Debug, Display};
+    use smallvec::alloc::fmt::Formatter;
 
     pub trait AsSearcher {
         fn as_searcher(self) -> Searcher;
