@@ -1,3 +1,8 @@
+// CHANGE added adapter module to abstract over egraph implementations.
+//        It defines traits and structs that can be interpreted by all egraph
+//        implementations, and the main thesy code has been changed to use these
+//        traits and structs instead of directly using egg's types.
+
 use crate::egg::{
     CostFunction, ENodeOrVar, Id, Language, Pattern, RecExpr, SearchMatches, StopReason, Subst,
     Symbol, SymbolLang, Var,

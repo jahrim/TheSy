@@ -3,11 +3,11 @@ use itertools::Itertools;
 use std::time::Duration;
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
-use smallvec::alloc::fmt::Formatter;
 use std::collections::hash_map::RandomState;
 use std::rc::Rc;
-use std::fmt;
 use std::path::Display;
+use std::fmt;
+use smallvec::alloc::fmt::Formatter;
 use crate::adapter::{Branch, EGraph, RunnerConfig};
 use crate::eggstentions::rewrites::Rewrite;
 use crate::eggstentions::searchers::multisearcher::{HasSearch, Searcher};
@@ -160,23 +160,21 @@ impl<G: EGraph> CaseSplit<G> {
         let mut new_known = known_splits.clone();
         new_known.extend(splitters.iter().cloned().cloned());
 
+        // CHANGE before each split cloned the egraph, now we just branch and
+        //        checkout and the meaning depends on the algorithm, e.g.,
+        //        cloning, versioning, persistence, or easter egg.
         let classes = egraph.classes().collect_vec();
-
         let current_branch = egraph.branch();
         for split in splitters {
             // NOTE this vector can be too big for allocation
-            let split_conclusions = split
-                .splits
-                .iter()
-                .map(|child| {
-                    let new_branch = egraph.branchout();
-                    egraph.checkout(new_branch);
-                    egraph.union(split.root, *child);
-                    Self::equiv_reduction(rules, egraph, run_depth);
-                    self.inner_case_split(egraph, split_depth - 1, &new_known, rules, run_depth);
-                    Self::collect_merged(egraph, &classes)
-                })
-                .collect_vec();
+            let split_conclusions = split.splits.iter().map(|child| {
+                let new_branch = egraph.branchout();
+                egraph.checkout(new_branch);
+                egraph.union(split.root, *child);
+                Self::equiv_reduction(rules, egraph, run_depth);
+                self.inner_case_split(egraph, split_depth - 1, &new_known, rules, run_depth);
+                Self::collect_merged(egraph, &classes)
+            }).collect_vec();
             egraph.checkout(current_branch);
             Self::merge_conclusions(egraph, &classes, split_conclusions);
         }

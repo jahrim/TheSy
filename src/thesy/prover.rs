@@ -139,6 +139,9 @@ impl Prover {
             return false;
         }
         // create graph containing both expressions
+        // CHANGE before each split cloned the egraph, now we just branch and
+        //        checkout and the meaning depends on the algorithm, e.g.,
+        //        cloning, versioning, persistence, or easter egg.
         let (mut egraph, ind_id) = self.create_proof_graph::<G>(precond, &ex1, &ex2);
         self.datatype.constructors.iter().filter(|c| c.params.is_empty()).all(|c| {
             let new_branch = egraph.branchout();
@@ -220,6 +223,9 @@ impl Prover {
         rule_set.extend(rules.iter().cloned());
         rule_set.extend(wfo_rws.iter().cloned());
         // create graph containing both expressions
+        // CHANGE before each split cloned the egraph, now we just branch and
+        //        checkout and the meaning depends on the algorithm, e.g.,
+        //        cloning, versioning, persistence, or easter egg.
         let (mut egraph, ind_id) = self.create_proof_graph::<G>(precond, &ex1, &ex2);
         let mut res = true;
         for c in self.datatype.constructors.iter().filter(|c| !c.params.is_empty()) {

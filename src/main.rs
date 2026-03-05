@@ -249,6 +249,9 @@ const GB: usize = 1024 * 1024 * 1024;
 // #[global_allocator]
 // static A: LoggingAlloc = LoggingAlloc;
 
+// CHANGE the entry point allows choosing which egraph implementation to use,
+// and the main thesy code is abstracted over these implementations using traits
+// defined in the adapter module.
 fn main() {
     #[cfg(feature = "trace")]
     veg::util::debug::tracing::init_default_tracing_subscriber(false);
@@ -303,6 +306,7 @@ fn run_thesy<G: EGraph>(args: &CliOpt) {
     }
     let res = config.run::<G>(Some(2));
     println!("done in {}", SystemTime::now().duration_since(start).unwrap().as_millis());
+    // CHANGE also measure branches and backtracking steps.
     println!("Branches: {}", res.0.egraph.branch_count());
     println!("Backtracking Steps: {}", res.0.egraph.backtracking_steps().unwrap_or_default());
     if cfg!(feature = "stats") {
