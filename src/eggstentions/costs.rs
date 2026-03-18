@@ -5,9 +5,9 @@ use itertools::Itertools;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RepOrder {
-    vars: Vec<String>,
-    depth: usize,
-    size: usize,
+    pub vars: Vec<String>,
+    pub depth: usize,
+    pub size: usize,
 }
 
 impl RepOrder {
@@ -28,7 +28,6 @@ impl RepOrder {
                 Ordering::Greater => { Some(Ordering::Greater) }
             }}
         }
-
     }
 }
 

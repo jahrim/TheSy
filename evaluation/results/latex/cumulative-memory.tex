@@ -1,0 +1,59 @@
+\PassOptionsToPackage{dvipsnames}{xcolor}
+\documentclass{standalone}
+\usepackage{tikz}
+\usepackage{pgfplots}
+\usepackage{pgfplotstable}
+\pgfplotsset{compat=1.9}
+\usetikzlibrary{positioning,fillbetween,pgfplots.groupplots}
+
+\begin{document}
+\begin{tikzpicture}
+\begin{axis}[
+    title={},
+    xlabel={Memory (GB)},
+    ylabel={\# Benchmarks},
+    xlabel style={yshift=0.3em},
+    ylabel style={yshift=-0.3em},
+    xtick distance=4,
+    ytick distance=60,
+    %xticklabel={\pgfkeys{/pgf/fpu}\pgfmathparse{int(round(\tick/1000))}\pgfmathprintnumber{\pgfmathresult}\,K},
+    %yticklabel={\pgfmathparse{int(round(\tick*100))}\pgfmathresult\,\%},
+    tick label style={/pgf/number format/1000 sep={\,}},
+    scaled ticks=false,
+    %xmin=0,
+    xmax=32,
+    %ymin=0,
+    ymax=300,
+    width=18em,
+    height=16em,
+    label style={font=\large\sffamily},
+    tick label style={font=\large\sffamily},
+    ymajorgrids=true,
+    xmajorgrids=true,
+    grid style=dashed,
+    legend columns=2,
+    legend style={column sep=0.1em},
+    legend image code/.code={\draw[#1] (0cm,0cm) -- (0.2cm,0cm);}, % horizontal legend lines
+    legend image post style={ultra thick},
+    legend pos=north east,
+    legend cell align=left,
+    %reverse legend,
+    %scale=0.6
+]
+\addplot[color=Orange, line cap=round, line join=round, mark=none, line width=1.1pt, restrict y to domain=0:300, restrict x to domain=0:31.9] 
+   table[col sep=comma,y={versionedMemory}]
+        {../csv/thesy-cumulative-memory.csv};
+\addplot[color=Emerald, line cap=round, line join=round, mark=none, line width=1.1pt, restrict y to domain=0:300, restrict x to domain=0:31.9] 
+   table[col sep=comma,y={cloningMemory}]
+        {../csv/thesy-cumulative-memory.csv};
+\addplot[color=NavyBlue, line cap=round, line join=round, mark=none, line width=1.1pt, restrict y to domain=0:300, restrict x to domain=0:31.9] 
+   table[col sep=comma, y={persistentMemory}]
+        {../csv/thesy-cumulative-memory.csv};
+\addplot[color=Purple, line cap=round, line join=round, mark=none, line width=1.1pt, restrict y to domain=0:300, restrict x to domain=0:31.9] 
+   table[col sep=comma, y={coloredMemory}]
+        {../csv/thesy-cumulative-memory.csv};
+% \legend{  Versioning,   Cloning,   Persistent, Easter Egg}
+\end{axis}
+\node[anchor=south west, font=\LARGE, inner sep=0pt] at (current bounding box.south west) {(a)};
+\end{tikzpicture}
+\end{document}

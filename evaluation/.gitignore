@@ -1,0 +1,11 @@
+*.res.th
+*.log
+*.fls
+*.synctex.gz
+*.out
+*.pdf
+*.fdb_latexmk
+*.aux 
+
+!results/pdf/paper-results.pdf
+!results/pdf/partial-paper-results.pdf

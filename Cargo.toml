@@ -8,6 +8,8 @@ edition = "2018"
 
 [dependencies]
 egg = { git = "https://github.com/eytans/egg", branch = "releases/cav2021" }
+easter_egg = { package = "easter-egg", version = "0.1.1-dev", git = "https://github.com/eytans/egg.git" } 
+veg = { package = "veg", path = "../versioned-egraphs" }
 cached = "0.18.0"
 itertools= "0.9.0"
 symbolic_expressions = "5.0.3"
@@ -22,6 +24,7 @@ permutohedron = "0.2.4"
 lazy_static = "1.4.0"
 global_counter = "0.2.1"
 bimap = "0.5.3"
+cap = "0.1.2"
 
 serde = {version = "1.0.116", features = ["derive"], optional = true}
 serde_json = {version = "1.0.58", optional = true}
@@ -31,6 +34,18 @@ stats = ["serde", "serde_json", "egg/serde-1"]
 split_clone = []
 no_split = ["no_expl_split"]
 no_expl_split = []
+trace = []
+
+# Veg Features
+veg-pc-none = ["veg/pc-none"]
+veg-pc-split = ["veg/pc-split"]
+veg-pc-half = ["veg/pc-half"]
+veg-pc-full = ["veg/pc-full"]
+veg-trace-unionfind = ["trace","veg/trace-unionfind"]
+veg-trace-egraph = ["trace","veg/trace-egraph"]
+veg-trace-disequalities = ["trace","veg/trace-disequalities"]
+veg-trace-machine = ["trace","veg/trace-machine"]
+veg-trace-all = ["trace","veg/trace-all"]
 
 #[build]
 #rustflags = ["-C", "link-args=-Wl,-stack_size,0x100000000"]    # custom flags to pass to all compiler invocations

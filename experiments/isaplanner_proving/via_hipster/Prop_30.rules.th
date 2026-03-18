@@ -1,8 +1,0 @@
-(=> "[(=> (x z y) (y)), (z)]" (=> (== ?z ?y) (= (?y) (?z))))
-(=> "(not (twoSpec y y))" (not (<2 ?y ?y)) true)
-(=> "[(=> (twoSpec z y) (not (twoSpec y z)))]" (=> (<2 ?z ?y) (= (not (<2 ?y ?z)) true)))
-(=> "(x y y)" (== ?y ?y) true)
-(=> "(twoSpec y (S y))" (<2 ?y (S ?y)) true)
-(=> "[(=> (twoSpec z y) (not (twoSpec (S y) z)))]" (=> (<2 ?z ?y) (= (not (<2 (S ?y) ?z)) true)))
-(=> "[(=> (twoSpec y z) (twoSpec y (S z)))]" (=> (<2 ?y ?z) (= (<2 ?y (S ?z)) true)))
-(=> "[(=> (twoSpec z y) (not (twoSpec y (S z))))]" (=> (<2 ?z ?y) (= (not (<2 ?y (S ?z))) true)))

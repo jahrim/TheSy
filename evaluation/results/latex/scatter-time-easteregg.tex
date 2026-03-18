@@ -1,0 +1,63 @@
+\PassOptionsToPackage{dvipsnames}{xcolor}
+\documentclass{standalone}
+\usepackage{tikz}
+\usepackage{pgfplots}
+\usepackage{pgfplotstable}
+\pgfplotsset{compat=1.9}
+\usetikzlibrary{positioning,fillbetween,pgfplots.groupplots}
+
+\begin{document}
+\begin{tikzpicture}
+\begin{axis}[
+    title={},
+    xlabel={Time Versioned (seconds)},
+    ylabel={Time Easter Egg (seconds)},
+    xlabel style={yshift=0.3em},
+    ylabel style={yshift=-0.3em},
+    ytick distance=60,
+    xtick distance=60,
+    %xticklabel={\pgfkeys{/pgf/fpu}\pgfmathparse{int(round(\tick/1000))}\pgfmathprintnumber{\pgfmathresult}\,K},
+    %yticklabel={\pgfmathparse{int(round(\tick*100))}\pgfmathresult\,\%},
+    tick label style={/pgf/number format/1000 sep={\,}},
+    scaled ticks=false,
+    %xmax=220000,
+    xmin=0,
+    ymin=0,
+    xmax=343,
+    ymax=343,
+    width=18em,
+    height=16em,
+    label style={font=\large\sffamily},
+    tick label style={font=\large\sffamily},
+    %legend style={row sep=-0.3em},
+    ymajorgrids=true,
+    xmajorgrids=true,
+    grid style=dashed,
+    legend columns=3,
+    legend style={inner sep=1pt,, at={(0.5,0)}, anchor=south},
+    legend image code/.code={\draw[#1] (0cm,0cm) -- (0.2cm,0cm);}, % horizontal legend lines
+    legend image post style={ultra thick},
+    legend cell align=left,
+    %reverse legend,
+    %scale=0.6
+]
+\addplot [black, solid] coordinates {(0,300) (343,300)};
+\addplot [blue, solid] coordinates {(0,314) (343,314)};
+\addplot [red, solid] coordinates {(329,0) (329,343)};
+
+\addplot [black, solid] coordinates {(300,0) (300,343)};
+\addplot [blue, solid] coordinates {(314,0) (314,343)};
+\addplot [red, solid] coordinates {(0,329) (343,329)};
+
+\addplot [only marks, mark size=1pt, mark=*, color=Purple] 
+    table[col sep=comma, x expr=\thisrow{versioned_secs} + (rand*3 - 1), y expr=\thisrow{colored_secs} + (rand*3 - 1)] 
+         {../csv/results-preprocessed.csv};
+
+\addplot [black, dashed, domain=0:343, samples=2] {x};
+\addplot [black, dashed, domain=0:343, samples=2] {0.5*x};
+\addplot [black, dashed, domain=0:343, samples=2] {2*x};
+%\legend{TO, OOM, ERR}
+\end{axis}
+\node[anchor=south west, font=\LARGE, inner sep=0pt] at (current bounding box.south west) {(d)};
+\end{tikzpicture}
+\end{document}

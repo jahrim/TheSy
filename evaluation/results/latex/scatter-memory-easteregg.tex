@@ -1,0 +1,62 @@
+\PassOptionsToPackage{dvipsnames}{xcolor}
+\documentclass{standalone}
+\usepackage{tikz}
+\usepackage{pgfplots}
+\usepackage{pgfplotstable}
+\pgfplotsset{compat=1.9}
+\usetikzlibrary{positioning,fillbetween,pgfplots.groupplots}
+
+\begin{document}
+\begin{tikzpicture}
+\begin{axis}[
+    title={},
+    xlabel={Memory Versioned (GB)},
+    ylabel={Memory Easter Egg (GB)},
+    xlabel style={yshift=0.3em},
+    ylabel style={yshift=-0.3em},
+    %xticklabel={\pgfkeys{/pgf/fpu}\pgfmathparse{int(round(\tick/1000))}\pgfmathprintnumber{\pgfmathresult}\,K},
+    %yticklabel={\pgfmathparse{int(round(\tick*100))}\pgfmathresult\,\%},
+    tick label style={/pgf/number format/1000 sep={\,}},
+    scaled ticks=false,
+    %xmax=220000,
+    xmin=0,
+    ymin=0,
+    xtick distance=4,
+    ytick distance=4,
+    xticklabels={0,$0$,$4$,$8$,$12$,$16$,$20$,$24$,$28$,$32$},
+    yticklabels={0,$0$,$4$,$8$,$12$,$16$,$20$,$24$,$28$,$32$},
+    xmax=36.8,
+    ymax=36.8,
+    width=18em,
+    height=16em,
+    label style={font=\large\sffamily},
+    tick label style={font=\large\sffamily},
+    %legend style={row sep=-0.3em},
+    ymajorgrids=true,
+    xmajorgrids=true,
+    grid style=dashed,
+    %legend pos=south east,
+    %legend cell align=left,
+    %reverse legend,
+    %scale=0.6
+]
+
+\addplot [blue, solid] coordinates {(0,32) (36.8,32)};
+\addplot [black, solid] coordinates {(0,33.6) (36.8,33.6)};
+\addplot [red, solid] coordinates {(0,35.2) (36.8,35.2)};
+
+\addplot [blue, solid] coordinates {(32,0) (32,36.8)};
+\addplot [black, solid] coordinates {(33.6,0) (33.6,36.8)};
+\addplot [red, solid] coordinates {(35.2,0) (35.2,36.8)};
+
+\addplot [only marks, mark size=1pt, mark=*, color=Purple]
+    table[col sep=comma, x expr=\thisrow{versioned_gb} + (rand*0.3 - 0.1), y expr=\thisrow{colored_gb} + (rand*0.3 - 0.1)] 
+         {../csv/results-preprocessed.csv};
+
+\addplot [black, dashed, domain=0:36.8, samples=2] {x};
+\addplot [black, dashed, domain=0:36.8, samples=2] {0.5*x};
+\addplot [black, dashed, domain=0:36.8, samples=2] {2*x};
+\end{axis}
+\node[anchor=south west, font=\LARGE, inner sep=0pt] at (current bounding box.south west) {(d)};
+\end{tikzpicture}
+\end{document}

@@ -1,7 +1,0 @@
-(prove (forall ((y U)) (= (-2 y y) (Z))))
-(prove (forall ((y U)) (= (-2 y (S y)) (Z))))
-(prove (forall ((y U)) (= (-2 (S y) y) (S Z))))
-(prove (forall ((x2 U) (z U)) (= (-2 (len x2) z) (len (drop z x2)))))
-(prove (forall ((x2 U) (x3 U) (z U)) (= (++ (++ z x2) x3) (++ z (++ x2 x3)))))
-(prove (forall ((y U)) (= (-2 y (S (S y))) (Z))))
-(prove (forall ((y U)) (= (-2 (S (S y)) y) (S (S Z)))))
